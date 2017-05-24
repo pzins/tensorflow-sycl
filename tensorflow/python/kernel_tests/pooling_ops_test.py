@@ -1106,16 +1106,21 @@ class PoolingTest(test.TestCase):
     if not test.is_gpu_available():
       return
 
-    # Test the GPU implementation that uses cudnn for now.
-    # It does not propagate the diff in cases of NaNs
-    expected_input_backprop_cudnn = [
-        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-        0.0, 0.0
-    ]
+    if "sycl" in test_util.gpu_device_name().lower():
+      #SYCL does propagation is consistent with CPU
+      expected_input_backprop_gpu = expected_input_backprop_tf_cpu
+    else:
+      # Test the GPU implementation that uses cudnn for now.
+      # It does not propagate the diff in cases of NaNs
+      expected_input_backprop_gpu = [
+          0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+          0.0, 0.0
+      ]
+
     self._testMaxPoolGradDirect(
         input_data,
         output_backprop,
-        expected_input_backprop_cudnn,
+        expected_input_backprop_gpu,
         input_sizes=[1, 4, 4, 1],
         output_sizes=[1, 3, 3, 1],
         window_rows=2,
@@ -1152,16 +1157,21 @@ class PoolingTest(test.TestCase):
     if not test.is_gpu_available():
       return
 
-    # Test the GPU implementation that uses cudnn for now.
-    # It does not propagate the diff in cases of NaNs
-    expected_input_backprop_cudnn = [
-        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-        0.0, 0.0
-    ]
+    if "sycl" in test_util.gpu_device_name().lower():
+      #SYCL does propagation is consistent with CPU
+      expected_input_backprop_gpu = expected_input_backprop_tf_cpu
+    else:
+      # Test the GPU implementation that uses cudnn for now.
+      # It does not propagate the diff in cases of NaNs
+      expected_input_backprop_gpu = [
+          0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+          0.0, 0.0
+      ]
+
     self._testMaxPoolGradDirect(
         input_data,
         output_backprop,
-        expected_input_backprop_cudnn,
+        expected_input_backprop_gpu,
         input_sizes=[1, 4, 4, 1],
         output_sizes=[1, 3, 3, 1],
         window_rows=2,
