@@ -1046,7 +1046,7 @@ REGISTER_KERNEL_BUILDER(Name("MaxPool")
                             .Device(DEVICE_SYCL)
                             .TypeConstraint<float>("T")
                             .Label("eigen_tensor"),
-                        MaxPoolingOp<Eigen::SyclDevice, float>);
+                        MaxPoolingOp<SYCLDevice, float>);
 #endif // TENSORFLOW_USE_SYCL
 
 #undef REGISTER_MAX_POOL_KERNELS
