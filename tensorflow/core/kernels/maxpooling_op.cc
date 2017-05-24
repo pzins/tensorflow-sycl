@@ -48,6 +48,9 @@ namespace tensorflow {
 
 typedef Eigen::ThreadPoolDevice CPUDevice;
 typedef Eigen::GpuDevice GPUDevice;
+#ifdef TENSORFLOW_USE_SYCL
+typedef Eigen::SyclDevice SYCLDevice;
+#endif // TENSORFLOW_USE_SYCL
 
 const int kInvalidMaxPoolingIndex = -1;
 
@@ -1037,6 +1040,14 @@ TF_CALL_GPU_NUMBER_TYPES(REGISTER_GPU_ONLY_POOL_KERNELS);
 #undef REGISTER_GPU_ONLY_POOL_KERNELS
 
 #endif  // GOOGLE_CUDA
+
+#ifdef TENSORFLOW_USE_SYCL
+REGISTER_KERNEL_BUILDER(Name("MaxPool")
+                            .Device(DEVICE_SYCL)
+                            .TypeConstraint<float>("T")
+                            .Label("eigen_tensor"),
+                        MaxPoolingOp<Eigen::SyclDevice, float>);
+#endif // TENSORFLOW_USE_SYCL
 
 #undef REGISTER_MAX_POOL_KERNELS
 
