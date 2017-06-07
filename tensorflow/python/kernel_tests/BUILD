@@ -947,7 +947,7 @@ cuda_py_test(
     tags = ["notsan"],
 )
 
-tf_py_test(
+cuda_py_test(
     name = "diag_op_test",
     size = "medium",
     srcs = ["diag_op_test.py"],
@@ -979,6 +979,7 @@ tf_py_test(
         "//tensorflow/python:util",
         "//tensorflow/python:variables",
     ],
+    data = ["//tensorflow/core:lmdb_testdata"],
 )
 
 cuda_py_test(
@@ -1954,7 +1955,6 @@ cuda_py_test(
         "//tensorflow/python:variables",
     ],
     flaky = 1,  # create_local_cluster sometimes times out.
-    tags = ["nomsan"],  # b/38390993
 )
 
 cuda_py_test(
@@ -2387,12 +2387,11 @@ cuda_py_test(
         "//tensorflow/python:util",
         "//tensorflow/python:data_flow_ops",
     ],
-    shard_count = 2,
 )
 
 cuda_py_test(
     name = "map_stage_op_test",
-    size = "small",
+    size = "medium",
     srcs = ["map_stage_op_test.py"],
     additional_deps = [
         "//tensorflow/python:array_ops",

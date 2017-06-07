@@ -569,6 +569,7 @@ Status InferenceContext::MakeShapeFromTensor(const Tensor* t,
     }
     const auto num_dims = Value(shape_dim);
     std::vector<DimensionHandle> dims;
+    dims.reserve(num_dims);
     for (int i = 0; i < num_dims; i++) dims.push_back(UnknownDim());
     return ReturnCreatedShape(dims, out);
   }
@@ -882,14 +883,6 @@ Status InferenceContext::AttachContext(const Status& status) {
   strings::StrAppend(&error_context, ".");
   return Status(status.code(),
                 strings::StrCat(status.error_message(), error_context));
-}
-
-ShapeHandle InferenceContext::input_handle_shape(int idx) {
-  if (input_handle_shapes_and_types_[idx] == nullptr) {
-    input_handle_shapes_and_types_[idx].reset(
-        new std::vector<ShapeAndType>{{UnknownShape(), DT_INVALID}});
-  }
-  return (*input_handle_shapes_and_types_[idx])[0].shape;
 }
 
 bool InferenceContext::MergeHandleShapesAndTypes(

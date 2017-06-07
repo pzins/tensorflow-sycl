@@ -1906,6 +1906,7 @@ cc_library(
     deps = [
         ":fixed_length_record_reader_op",
         ":identity_reader_op",
+        ":lmdb_reader_op",
         ":matching_files_op",
         ":reader_ops",
         ":restore_op",
@@ -1938,6 +1939,14 @@ tf_kernel_library(
     name = "identity_reader_op",
     prefix = "identity_reader_op",
     deps = IO_DEPS,
+)
+
+tf_kernel_library(
+    name = "lmdb_reader_op",
+    prefix = "lmdb_reader_op",
+    deps = IO_DEPS + [
+        "@lmdb",
+    ],
 )
 
 tf_kernel_library(
@@ -3172,6 +3181,21 @@ tf_kernel_library(
     deps = REQUIRED_DEPS,
 )
 
+tf_cc_test(
+    name = "sendrecv_ops_test",
+    srcs = ["sendrecv_ops_test.cc"],
+    linkstatic = tf_kernel_tests_linkstatic(),  # Required for benchmarking
+    deps = [
+        ":ops_testutil",
+        ":ops_util",
+        ":sendrecv_ops",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
+)
+
 cc_library(
     name = "sparse",
     deps = [
@@ -4315,6 +4339,7 @@ filegroup(
             # not used on Android. Those ops also do not compile if included,
             # unless we add the additional deps they need.
             "tf_record_reader_op.*",
+            "lmdb_reader_op.*",
             "string_to_hash_bucket_op.*",
             "sdca_ops.*",
             "sdca_internal.*",
@@ -5406,6 +5431,7 @@ tf_kernel_library(
     srcs = ["iterator_ops.cc"],
     deps = [
         ":dataset",
+        ":ops_util",
         "//tensorflow/core:core_cpu_internal",
         "//tensorflow/core:dataset_ops_op_lib",
         "//tensorflow/core:framework",

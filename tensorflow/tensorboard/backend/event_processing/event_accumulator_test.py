@@ -24,8 +24,6 @@ import six
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
-from tensorflow.python.platform import googletest
-from tensorflow.python.summary.writer.writer import SummaryToEventTransformer
 from tensorflow.tensorboard.backend.event_processing import event_accumulator as ea
 
 
@@ -182,7 +180,7 @@ class MockingEventAccumulatorTest(EventAccumulatorTest):
 
   def setUp(self):
     super(MockingEventAccumulatorTest, self).setUp()
-    self.stubs = googletest.StubOutForTesting()
+    self.stubs = tf.test.StubOutForTesting()
     self._real_constructor = ea.EventAccumulator
     self._real_generator = ea._GeneratorFromPath
 
@@ -761,7 +759,8 @@ class MockingEventAccumulatorTest(EventAccumulatorTest):
   def testTFSummaryScalar(self):
     """Verify processing of tf.summary.scalar."""
     event_sink = _EventGenerator(self, zero_out_timestamps=True)
-    writer = SummaryToEventTransformer(event_sink)
+    writer = tf.summary.FileWriter(self.get_temp_dir())
+    writer.event_writer = event_sink
     with self.test_session() as sess:
       ipt = tf.placeholder(tf.float32)
       tf.summary.scalar('scalar1', ipt)
@@ -795,7 +794,8 @@ class MockingEventAccumulatorTest(EventAccumulatorTest):
   def testTFSummaryImage(self):
     """Verify processing of tf.summary.image."""
     event_sink = _EventGenerator(self, zero_out_timestamps=True)
-    writer = SummaryToEventTransformer(event_sink)
+    writer = tf.summary.FileWriter(self.get_temp_dir())
+    writer.event_writer = event_sink
     with self.test_session() as sess:
       ipt = tf.ones([10, 4, 4, 3], tf.uint8)
       # This is an interesting example, because the old tf.image_summary op
@@ -831,7 +831,8 @@ class MockingEventAccumulatorTest(EventAccumulatorTest):
   def testTFSummaryTensor(self):
     """Verify processing of tf.summary.tensor."""
     event_sink = _EventGenerator(self, zero_out_timestamps=True)
-    writer = SummaryToEventTransformer(event_sink)
+    writer = tf.summary.FileWriter(self.get_temp_dir())
+    writer.event_writer = event_sink
     with self.test_session() as sess:
       tf.summary.tensor_summary('scalar', tf.constant(1.0))
       tf.summary.tensor_summary('vector', tf.constant([1.0, 2.0, 3.0]))

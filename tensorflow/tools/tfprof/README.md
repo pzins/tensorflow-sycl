@@ -92,7 +92,7 @@ Sigmoid                        152.57MB (85.28%, 0.21%),        96.66ms (23.46%,
 
 ### Visualize time and memory.
 <left>
-![CodeTimeline](g3doc/graph_timeline.png)
+[CodeTimeline](g3doc/graph_timeline.png)
 </left>
 
 ## Python API Tutorials
@@ -191,8 +191,8 @@ view and scope view. See code view example in later examples.
 ```
 
 <left>
-![CodeTimeline](g3doc/graph_timeline.png)
-![CodeTimeline](g3doc/scope_timeline.png)
+[CodeTimeline](g3doc/graph_timeline.png)
+[CodeTimeline](g3doc/scope_timeline.png)
 </left>
 
 
@@ -268,7 +268,7 @@ tfprof>
 -show_name_regexes          .*
 -hide_name_regexes          IsVariableInitialized_[0-9]+,save\/.*,^zeros[0-9_]*
 -account_displayed_op_only  false
-# supported select fileds. Availability depends on --[run_meta|checkpoint|op_log]_path.
+# supported select fields. Availability depends on --[run_meta|checkpoint|op_log]_path.
 # [bytes|micros|params|float_ops|occurrence|tensor_value|device|op_types]
 -select                     params
 # format: output_type:key=value,key=value...
@@ -304,7 +304,7 @@ _TFProfRoot (0us/22.44ms)
 
 Set ```-output timeline:outfile=<filename>``` to generate timeline instead of stdout.
 <left>
-![CodeTimeline](g3doc/code_timeline.png)
+[CodeTimeline](g3doc/code_timeline.png)
 </left>
 
 
@@ -603,15 +603,15 @@ provides checkpointed tensors' values.
 
 `-order_by`: Order the results by [name|depth|bytes|micros|params|float_ops|occurrence]
 
-`-account_type_regexes`: Account and display the ops whose types match one of the type regexes specified. tfprof allow user to define extra op types for ops through tensorflow.tfprof.OpLog proto. regexes are comma-sperated.
+`-account_type_regexes`: Account and display the ops whose types match one of the type regexes specified. tfprof allow user to define extra op types for ops through tensorflow.tfprof.OpLog proto. regexes are comma-separated.
 
 `-start_name_regexes`: Show ops starting from the ops that matches the regexes, recursively. regexes are comma-separated.
 
-`-trim_name_regexes`: Hide ops starting from the ops that matches the regexes, recursively, regexes are comma-seprated.
+`-trim_name_regexes`: Hide ops starting from the ops that matches the regexes, recursively, regexes are comma-separated.
 
-`-show_name_regexes`: Show ops that match the regexes. regexes are comma-seprated.
+`-show_name_regexes`: Show ops that match the regexes. regexes are comma-separated.
 
-`-hide_name_regexes`: Hide ops that match the regexes. regexes are comma-seprated.
+`-hide_name_regexes`: Hide ops that match the regexes. regexes are comma-separated.
 
 Notes: For each op, `-account_type_regexes` is first evaluated, only ops with
 types matching the specified regexes are accounted and selected for displayed.
