@@ -39,6 +39,9 @@ namespace tensorflow {
 
 typedef Eigen::ThreadPoolDevice CPUDevice;
 typedef Eigen::GpuDevice GPUDevice;
+#ifdef TENSORFLOW_USE_SYCL
+typedef Eigen::SyclDevice SYCLDevice;
+#endif  // TENSORFLOW_USE_SYCL
 
 template <typename Device, typename T, typename ArgFunctor>
 class ArgOp : public OpKernel {
@@ -185,4 +188,23 @@ TF_CALL_GPU_NUMBER_TYPES(REGISTER_ARGMAX_GPU);
 
 #endif  // GOOGLE_CUDA
 
+#ifdef TENSORFLOW_USE_SYCL
+// Registration of the SYCL implementations.
+#define REGISTER_ARGMAX_SYCL(type)                           \
+  REGISTER_KERNEL_BUILDER(Name("ArgMax")                     \
+                              .Device(DEVICE_SYCL)           \
+                              .TypeConstraint<type>("T")     \
+                              .TypeConstraint<int32>("Tidx") \
+                              .HostMemory("dimension"),      \
+                          ArgMaxOp<SYCLDevice, type>);       \
+  REGISTER_KERNEL_BUILDER(Name("ArgMin")                     \
+                              .Device(DEVICE_SYCL)           \
+                              .TypeConstraint<type>("T")     \
+                              .TypeConstraint<int32>("Tidx") \
+                              .HostMemory("dimension"),      \
+                          ArgMinOp<SYCLDevice, type>);
+
+TF_CALL_GPU_NUMBER_TYPES_NO_HALF(REGISTER_ARGMAX_SYCL);
+#undef REGISTER_ARGMAX_SYCL
+#endif  // TENSORFLOW_USE_SYCL
 }  // namespace tensorflow
