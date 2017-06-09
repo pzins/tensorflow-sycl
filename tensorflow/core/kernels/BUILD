@@ -3624,6 +3624,7 @@ tf_kernel_library(
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
         "//tensorflow/core:lib_internal",
+        "//third_party/eigen3",
     ],
 )
 

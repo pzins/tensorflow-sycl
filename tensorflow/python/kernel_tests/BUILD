@@ -799,7 +799,6 @@ tf_py_test(
         "//tensorflow/python:logging_ops",
         "//tensorflow/python:summary",
     ],
-    tags = ["no_windows"],
 )
 
 tf_py_test(
@@ -980,6 +979,7 @@ tf_py_test(
         "//tensorflow/python:variables",
     ],
     data = ["//tensorflow/core:lmdb_testdata"],
+    tags = ["no_windows"],
 )
 
 cuda_py_test(
@@ -2143,7 +2143,6 @@ cuda_py_test(
         "//tensorflow/python:nn_grad",
         "//tensorflow/python:nn_ops",
     ],
-    tags = ["no_windows"],
 )
 
 tf_py_test(
@@ -2387,6 +2386,7 @@ cuda_py_test(
         "//tensorflow/python:util",
         "//tensorflow/python:data_flow_ops",
     ],
+    tags = ["manual"],  # http://b/62429636
 )
 
 cuda_py_test(
@@ -2401,6 +2401,7 @@ cuda_py_test(
         "//tensorflow/python:util",
         "//tensorflow/python:data_flow_ops",
     ],
+    tags = ["manual"],  # http://b/62429636
 )
 
 cuda_py_test(
@@ -2629,7 +2630,6 @@ tf_py_test(
         "//tensorflow/python:sets",
         "//tensorflow/python:sparse_ops",
     ],
-    tags = ["no_windows"],
 )
 
 tf_py_test(

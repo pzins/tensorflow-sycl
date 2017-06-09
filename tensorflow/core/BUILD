@@ -413,6 +413,7 @@ tf_cuda_library(
         "util/work_sharder.h",
     ] + select({
         "//tensorflow:windows": [],
+        "//tensorflow:windows_msvc": [],
         "//conditions:default": [
             "util/memmapped_file_system.h",
             "util/memmapped_file_system_writer.h",
@@ -460,6 +461,7 @@ cc_library(
     deps = [
         ":lib",
         ":op_gen_overrides_proto_cc",
+        ":protos_all_cc",
     ],
 )
 
@@ -1207,32 +1209,35 @@ tf_proto_library_cc(
     ],
 )
 
+LIB_INTERNAL_WINDOWS_DEPS = glob(
+    [
+        "lib/**/*.h",
+        "lib/**/*.cc",
+        "platform/*.h",
+        "platform/*.cc",
+        "platform/profile_utils/**/*.h",
+        "platform/profile_utils/**/*.cc",
+    ],
+    exclude = [
+        "**/*test*",
+        "lib/hash/crc32c_accelerate.cc",
+        "lib/gif/**/*",
+        "lib/jpeg/**/*",
+        "platform/gif.h",
+        "platform/jpeg.h",
+        "platform/**/env_time.cc",
+        "platform/**/cuda.h",
+        "platform/**/cuda_libdevice_path.cc",
+        "platform/**/stream_executor.h",
+        "platform/load_library.cc",
+    ],
+)
+
 cc_library(
     name = "lib_internal",
     srcs = select({
-        "//tensorflow:windows": glob(
-            [
-                "lib/**/*.h",
-                "lib/**/*.cc",
-                "platform/*.h",
-                "platform/*.cc",
-                "platform/profile_utils/**/*.h",
-                "platform/profile_utils/**/*.cc",
-            ],
-            exclude = [
-                "**/*test*",
-                "lib/hash/crc32c_accelerate.cc",
-                "lib/gif/**/*",
-                "lib/jpeg/**/*",
-                "platform/gif.h",
-                "platform/jpeg.h",
-                "platform/**/env_time.cc",
-                "platform/**/cuda.h",
-                "platform/**/cuda_libdevice_path.cc",
-                "platform/**/stream_executor.h",
-                "platform/load_library.cc",
-            ],
-        ),
+        "//tensorflow:windows": LIB_INTERNAL_WINDOWS_DEPS,
+        "//tensorflow:windows_msvc": LIB_INTERNAL_WINDOWS_DEPS,
         "//conditions:default": glob(
             [
                 "lib/**/*.h",
@@ -1436,6 +1441,7 @@ tf_cuda_library(
         ],
     ) + select({
         "//tensorflow:windows": [],
+        "//tensorflow:windows_msvc": [],
         "//conditions:default": [
             "util/memmapped_file_system.h",
             "util/memmapped_file_system.cc",
@@ -1581,6 +1587,7 @@ tf_cuda_library(
         ":lib_internal",
         ":proto_text",
         ":protos_all_cc",
+        "//tensorflow/core/kernels:bounds_check",
         "//tensorflow/core/kernels:required",
         "//third_party/eigen3",
     ],

@@ -131,7 +131,8 @@ patched_http_archive = repository_rule(
 
 
 # If TensorFlow is linked as a submodule.
-# path_prefix and tf_repo_name are no longer used.
+# path_prefix is no longer used.
+# tf_repo_name is thought to be under consideration.
 def tf_workspace(path_prefix="", tf_repo_name=""):
   # We must check the bazel version before trying to parse any other BUILD
   # files, in case the parsing of those build files depends on the bazel
@@ -142,9 +143,6 @@ def tf_workspace(path_prefix="", tf_repo_name=""):
   python_configure(name="local_config_python")
   if path_prefix:
     print("path_prefix was specified to tf_workspace but is no longer used " +
-          "and will be removed in the future.")
-  if tf_repo_name:
-    print("tf_repo_name was specified to tf_workspace but is no longer used " +
           "and will be removed in the future.")
 
   native.new_http_archive(
@@ -498,11 +496,11 @@ def tf_workspace(path_prefix="", tf_repo_name=""):
   temp_workaround_http_archive(
       name = "llvm",
       urls = [
-          "http://mirror.bazel.build/github.com/llvm-mirror/llvm/archive/c978c0ff91f7c4ea58cfbd8f378e51c6af2c2b4b.tar.gz",
-          "https://github.com/llvm-mirror/llvm/archive/c978c0ff91f7c4ea58cfbd8f378e51c6af2c2b4b.tar.gz",
+          "http://mirror.bazel.build/github.com/llvm-mirror/llvm/archive/e156d99231a7735d06a97b5b83de70bf4ce4f034.tar.gz",
+          "https://github.com/llvm-mirror/llvm/archive/e156d99231a7735d06a97b5b83de70bf4ce4f034.tar.gz",
       ],
-      sha256 = "42c57d798a037d9dea692ce1da8ff4d24966ab5a40494015b374341e43411a37",
-      strip_prefix = "llvm-c978c0ff91f7c4ea58cfbd8f378e51c6af2c2b4b",
+      sha256 = "72e34e2411a06d4200a2688ee83832805fbef23a12ea481f31c2b8866fde007a",
+      strip_prefix = "llvm-e156d99231a7735d06a97b5b83de70bf4ce4f034",
       build_file = str(Label("//third_party/llvm:llvm.BUILD")),
       repository = tf_repo_name,
   )
@@ -752,19 +750,27 @@ def tf_workspace(path_prefix="", tf_repo_name=""):
       ]),
   )
 
-  ##############################################################################
-  # TensorBoard JavaScript Production Dependencies
+  native.new_http_archive(
+      name = "io_angular_clutz",
+      build_file = str(Label("//third_party:clutz.BUILD")),
+      sha256 = "2981de41d1ff4774b544423da9a2cd8beb3be649e95aef2ef2fd83957300b3fe",
+      strip_prefix = "clutz-b0db5ade9bb535d387f05292316c422790c9848e",
+      urls = [
+          "http://mirror.bazel.build/github.com/angular/clutz/archive/b0db5ade9bb535d387f05292316c422790c9848e.tar.gz",  # 2017-05-22
+          "https://github.com/angular/clutz/archive/b0db5ade9bb535d387f05292316c422790c9848e.tar.gz",
+      ],
+  )
 
   filegroup_external(
       name = "com_google_javascript_closure_compiler_externs",
       licenses = ["notice"],  # Apache 2.0
       sha256_urls_extract = {
-          "0ee7b88ed2955b622eaa038bece283e28d0fb5abebfbb80871fc3d0353f0000b": [
-              "http://mirror.bazel.build/github.com/google/closure-compiler/archive/v20170423.tar.gz",
-              "https://github.com/google/closure-compiler/archive/v20170423.tar.gz",
+          "0f515a6ebfa138490b3c5ea9f3591ea1a7e4a930d3074f18b3eca86084ad9b66": [
+              "http://mirror.bazel.build/github.com/google/closure-compiler/archive/b37e6000001b0a6bf4c0be49024ebda14a8711d9.tar.gz",  # 2017-06-02
+              "https://github.com/google/closure-compiler/archive/b37e6000001b0a6bf4c0be49024ebda14a8711d9.tar.gz",
           ],
       },
-      strip_prefix = {"v20170423.tar.gz": "closure-compiler-20170423/externs"},
+      strip_prefix = {"b37e6000001b0a6bf4c0be49024ebda14a8711d9.tar.gz": "closure-compiler-b37e6000001b0a6bf4c0be49024ebda14a8711d9/externs"},
   )
 
   filegroup_external(
@@ -772,11 +778,14 @@ def tf_workspace(path_prefix="", tf_repo_name=""):
       licenses = ["notice"],  # Apache 2.0
       sha256_urls = {
           "23baad9a200a717a821c6df504c84d3a893d7ea9102b14876eb80097e3b94292": [
-              "http://mirror.bazel.build/raw.githubusercontent.com/google/closure-compiler/0e8dc5597a295ee259e3fecd98d6535dc621232f/contrib/externs/polymer-1.0.js",
+              "http://mirror.bazel.build/raw.githubusercontent.com/google/closure-compiler/0e8dc5597a295ee259e3fecd98d6535dc621232f/contrib/externs/polymer-1.0.js",  # 2017-05-27
               "https://raw.githubusercontent.com/google/closure-compiler/0e8dc5597a295ee259e3fecd98d6535dc621232f/contrib/externs/polymer-1.0.js",
           ],
       },
   )
+
+  ##############################################################################
+  # TensorBoard JavaScript Production Dependencies
 
   web_library_external(
       name = "com_lodash",
@@ -2694,4 +2703,19 @@ def tf_workspace(path_prefix="", tf_repo_name=""):
       ],
       path = "/test-fixture",
       exclude = ["test/**"],
+  )
+
+  filegroup_external(
+      name = "org_chromium_catapult_vulcanized_trace_viewer",
+      licenses = ["notice"],  # BSD-3-Clause
+      sha256_urls = {
+          "f0df289ba9d03d857ad1c2f5918861376b1510b71588ffc60eff5c7a7bfedb09": [
+              "http://mirror.bazel.build/raw.githubusercontent.com/catapult-project/catapult/2f7ee994984f3ebd3dd3dc3e05777bf180ec2ee8/LICENSE",
+              "https://raw.githubusercontent.com/catapult-project/catapult/2f7ee994984f3ebd3dd3dc3e05777bf180ec2ee8/LICENSE",
+          ],
+          "9e99e79439ea5a1471bd4dd325bd6733e133bcb3da4df4b878ed6d2aec7c8d86": [
+              "http://mirror.bazel.build/raw.githubusercontent.com/catapult-project/catapult/2f7ee994984f3ebd3dd3dc3e05777bf180ec2ee8/trace_viewer_full.html",
+              "https://raw.githubusercontent.com/catapult-project/catapult/2f7ee994984f3ebd3dd3dc3e05777bf180ec2ee8/trace_viewer_full.html"
+          ],
+      },
   )

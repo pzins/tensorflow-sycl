@@ -809,7 +809,6 @@ py_test(
     srcs = ["framework/meta_graph_test.py"],
     main = "framework/meta_graph_test.py",
     srcs_version = "PY2AND3",
-    tags = ["no_windows"],
     deps = [
         ":array_ops",
         ":client_testlib",
@@ -1550,6 +1549,7 @@ py_library(
     srcs_version = "PY2AND3",
     deps = [
         ":array_ops",
+        ":constant_op",
         ":framework",
         ":framework_for_generated_wrappers",
         ":lookup_ops_gen",
@@ -2181,7 +2181,6 @@ cuda_py_test(
         ":test_ops",
         "//third_party/py/numpy",
     ],
-    tags = ["no_windows"],
 )
 
 cuda_py_test(
@@ -2916,7 +2915,6 @@ cuda_py_test(
         ":variables",
         "//third_party/py/numpy",
     ],
-    tags = ["no_windows"],
 )
 
 tf_py_test(
@@ -2931,7 +2929,6 @@ tf_py_test(
         ":training",
         ":variables",
     ],
-    tags = ["no_windows"],
 )
 
 py_library(
@@ -3236,7 +3233,6 @@ cuda_py_test(
         "@six_archive//:six",
         "//tensorflow/core:protos_all_py",
     ],
-    tags = ["no_windows"],
 )
 
 py_test(

@@ -439,7 +439,7 @@ Status AlgebraicSimplifierVisitor::HandleDot(HloInstruction* dot,
         dot, HloInstruction::CreateBroadcast(dot->shape(), zero, {}));
   }
 
-  // Simplify dot(transpose(a), transpose(b)) to tranpose(dot(b,a)).
+  // Simplify dot(transpose(a), transpose(b)) to transpose(dot(b,a)).
   if (lhs->IsRank2Transpose() && rhs->IsRank2Transpose()) {
     auto new_dot = computation_->AddInstruction(HloInstruction::CreateBinary(
         ShapeUtil::PermuteDimensions({1, 0}, dot->shape()), HloOpcode::kDot,
@@ -1237,7 +1237,9 @@ Status AlgebraicSimplifierVisitor::HandleConvolution(
   //   bitcasts_ == true.
 
   // TODO(cwhipkey): b/31337498, make this layout insensitive.
-  if (!is_layout_sensitive_) return Status::OK();
+  if (!is_layout_sensitive_) {
+    return Status::OK();
+  }
 
   const ConvolutionDimensionNumbers& dnums =
       convolution->convolution_dimension_numbers();

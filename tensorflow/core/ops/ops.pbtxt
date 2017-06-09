@@ -4971,6 +4971,30 @@ op {
   summary: "Computes cos of x element-wise."
 }
 op {
+  name: "Cosh"
+  input_arg {
+    name: "x"
+    type_attr: "T"
+  }
+  output_arg {
+    name: "y"
+    type_attr: "T"
+  }
+  attr {
+    name: "T"
+    type: "type"
+    allowed_values {
+      list {
+        type: DT_FLOAT
+        type: DT_DOUBLE
+        type: DT_COMPLEX64
+        type: DT_COMPLEX128
+      }
+    }
+  }
+  summary: "Computes hyperbolic cosine of x element-wise."
+}
+op {
   name: "CountUpTo"
   input_arg {
     name: "ref"
@@ -9268,7 +9292,7 @@ op {
     type: DT_FLOAT
   }
   summary: "Inverse real-valued fast Fourier transform."
-  description: "Computes the inverse 1-dimensional discrete Fourier transform of a real-valued\nsignal over the inner-most dimension of `input`.\n\nThe inner-most dimension of `input` is assumed to be the result of `RFFT`: the\n`fft_length / 2 + 1` unique components of the DFT of a real-valued signal. If\n`fft_length` is not provided, it is computed from the size of the inner-most\ndimension of `input` (`fft_length = 2 * (inner - 1)`). If the FFT length used to\ncompute `input` is odd, it should be provided since it cannot be inferred\nproperly."
+  description: "Computes the inverse 1-dimensional discrete Fourier transform of a real-valued\nsignal over the inner-most dimension of `input`.\n\nThe inner-most dimension of `input` is assumed to be the result of `RFFT`: the\n`fft_length / 2 + 1` unique components of the DFT of a real-valued signal. If\n`fft_length` is not provided, it is computed from the size of the inner-most\ndimension of `input` (`fft_length = 2 * (inner - 1)`). If the FFT length used to\ncompute `input` is odd, it should be provided since it cannot be inferred\nproperly.\n\nAlong the axis `IRFFT` is computed on, if `fft_length / 2 + 1` is smaller\nthan the corresponding dimension of `input`, the dimension is cropped. If it is\nlarger, the dimension is padded with zeros."
 }
 op {
   name: "IRFFT2D"
@@ -9288,7 +9312,7 @@ op {
     type: DT_FLOAT
   }
   summary: "Inverse 2D real-valued fast Fourier transform."
-  description: "Computes the inverse 2-dimensional discrete Fourier transform of a real-valued\nsignal over the inner-most 2 dimensions of `input`.\n\nThe inner-most 2 dimensions of `input` are assumed to be the result of `RFFT2D`:\nThe inner-most dimension contains the `fft_length / 2 + 1` unique components of\nthe DFT of a real-valued signal. If `fft_length` is not provided, it is computed\nfrom the size of the inner-most 2 dimensions of `input`. If the FFT length used\nto compute `input` is odd, it should be provided since it cannot be inferred\nproperly."
+  description: "Computes the inverse 2-dimensional discrete Fourier transform of a real-valued\nsignal over the inner-most 2 dimensions of `input`.\n\nThe inner-most 2 dimensions of `input` are assumed to be the result of `RFFT2D`:\nThe inner-most dimension contains the `fft_length / 2 + 1` unique components of\nthe DFT of a real-valued signal. If `fft_length` is not provided, it is computed\nfrom the size of the inner-most 2 dimensions of `input`. If the FFT length used\nto compute `input` is odd, it should be provided since it cannot be inferred\nproperly.\n\nAlong each axis `IRFFT2D` is computed on, if `fft_length` (or\n`fft_length / 2 + 1` for the inner-most dimension) is smaller than the\ncorresponding dimension of `input`, the dimension is cropped. If it is larger,\nthe dimension is padded with zeros."
 }
 op {
   name: "IRFFT3D"
@@ -9308,7 +9332,7 @@ op {
     type: DT_FLOAT
   }
   summary: "Inverse 3D real-valued fast Fourier transform."
-  description: "Computes the inverse 3-dimensional discrete Fourier transform of a real-valued\nsignal over the inner-most 3 dimensions of `input`.\n\nThe inner-most 3 dimensions of `input` are assumed to be the result of `RFFT3D`:\nThe inner-most dimension contains the `fft_length / 2 + 1` unique components of\nthe DFT of a real-valued signal. If `fft_length` is not provided, it is computed\nfrom the size of the inner-most 3 dimensions of `input`. If the FFT length used\nto compute `input` is odd, it should be provided since it cannot be inferred\nproperly."
+  description: "Computes the inverse 3-dimensional discrete Fourier transform of a real-valued\nsignal over the inner-most 3 dimensions of `input`.\n\nThe inner-most 3 dimensions of `input` are assumed to be the result of `RFFT3D`:\nThe inner-most dimension contains the `fft_length / 2 + 1` unique components of\nthe DFT of a real-valued signal. If `fft_length` is not provided, it is computed\nfrom the size of the inner-most 3 dimensions of `input`. If the FFT length used\nto compute `input` is odd, it should be provided since it cannot be inferred\nproperly.\n\nAlong each axis `IRFFT3D` is computed on, if `fft_length` (or\n`fft_length / 2 + 1` for the inner-most dimension) is smaller than the\ncorresponding dimension of `input`, the dimension is cropped. If it is larger,\nthe dimension is padded with zeros."
 }
 op {
   name: "Identity"
@@ -12191,6 +12215,7 @@ op {
   }
   summary: "V2 format specific: merges the metadata files of sharded checkpoints.  The"
   description: "result is one logical checkpoint, with one physical metadata file and renamed\ndata files.\n\nIntended for \"grouping\" multiple checkpoints in a sharded checkpoint setup.\n\nIf delete_old_dirs is true, attempts to delete recursively the dirname of each\npath in the input checkpoint_prefixes.  This is useful when those paths are non\nuser-facing temporary locations."
+  is_stateful: true
 }
 op {
   name: "Mfcc"
@@ -16179,7 +16204,7 @@ op {
     type: DT_COMPLEX64
   }
   summary: "Real-valued fast Fourier transform."
-  description: "Computes the 1-dimensional discrete Fourier transform of a real-valued signal\nover the inner-most dimension of `input`.\n\nSince the DFT of a real signal is Hermitian-symmetric, `RFFT` only returns the\n`fft_length / 2 + 1` unique components of the FFT: the zero-frequency term,\nfollowed by the `fft_length / 2` positive-frequency terms."
+  description: "Computes the 1-dimensional discrete Fourier transform of a real-valued signal\nover the inner-most dimension of `input`.\n\nSince the DFT of a real signal is Hermitian-symmetric, `RFFT` only returns the\n`fft_length / 2 + 1` unique components of the FFT: the zero-frequency term,\nfollowed by the `fft_length / 2` positive-frequency terms.\n\nAlong the axis `RFFT` is computed on, if `fft_length` is smaller than the\ncorresponding dimension of `input`, the dimension is cropped. If it is larger,\nthe dimension is padded with zeros."
 }
 op {
   name: "RFFT2D"
@@ -16199,7 +16224,7 @@ op {
     type: DT_COMPLEX64
   }
   summary: "2D real-valued fast Fourier transform."
-  description: "Computes the 2-dimensional discrete Fourier transform of a real-valued signal\nover the inner-most 2 dimensions of `input`.\n\nSince the DFT of a real signal is Hermitian-symmetric, `RFFT2D` only returns the\n`fft_length / 2 + 1` unique components of the FFT for the inner-most dimension\nof `output`: the zero-frequency term, followed by the `fft_length / 2`\npositive-frequency terms."
+  description: "Computes the 2-dimensional discrete Fourier transform of a real-valued signal\nover the inner-most 2 dimensions of `input`.\n\nSince the DFT of a real signal is Hermitian-symmetric, `RFFT2D` only returns the\n`fft_length / 2 + 1` unique components of the FFT for the inner-most dimension\nof `output`: the zero-frequency term, followed by the `fft_length / 2`\npositive-frequency terms.\n\nAlong each axis `RFFT2D` is computed on, if `fft_length` is smaller than the\ncorresponding dimension of `input`, the dimension is cropped. If it is larger,\nthe dimension is padded with zeros."
 }
 op {
   name: "RFFT3D"
@@ -16219,7 +16244,7 @@ op {
     type: DT_COMPLEX64
   }
   summary: "3D real-valued fast Fourier transform."
-  description: "Computes the 3-dimensional discrete Fourier transform of a real-valued signal\nover the inner-most 3 dimensions of `input`.\n\nSince the DFT of a real signal is Hermitian-symmetric, `RFFT3D` only returns the\n`fft_length / 2 + 1` unique components of the FFT for the inner-most dimension\nof `output`: the zero-frequency term, followed by the `fft_length / 2`\npositive-frequency terms."
+  description: "Computes the 3-dimensional discrete Fourier transform of a real-valued signal\nover the inner-most 3 dimensions of `input`.\n\nSince the DFT of a real signal is Hermitian-symmetric, `RFFT3D` only returns the\n`fft_length / 2 + 1` unique components of the FFT for the inner-most dimension\nof `output`: the zero-frequency term, followed by the `fft_length / 2`\npositive-frequency terms.\n\nAlong each axis `RFFT3D` is computed on, if `fft_length` is smaller than the\ncorresponding dimension of `input`, the dimension is cropped. If it is larger,\nthe dimension is padded with zeros."
 }
 op {
   name: "RGBToHSV"
@@ -19768,6 +19793,7 @@ op {
   }
   summary: "Restores a tensor from checkpoint files."
   description: "Reads a tensor stored in one or several files. If there are several files (for\ninstance because a tensor was saved as slices), `file_pattern` may contain\nwildcard symbols (`*` and `?`) in the filename portion only, not in the\ndirectory portion.\n\nIf a `file_pattern` matches several files, `preferred_shard` can be used to hint\nin which file the requested tensor is likely to be found. This op will first\nopen the file at index `preferred_shard` in the list of matching files and try\nto restore tensors from that file.  Only if some tensors or tensor slices are\nnot found in that first file, then the Op opens all the files. Setting\n`preferred_shard` to match the value passed as the `shard` input\nof a matching `Save` Op may speed up Restore.  This attribute only affects\nperformance, not correctness.  The default value -1 means files are processed in\norder.\n\nSee also `RestoreSlice`."
+  is_stateful: true
 }
 op {
   name: "RestoreSlice"
@@ -19806,6 +19832,7 @@ op {
   }
   summary: "Restores a tensor from checkpoint files."
   description: "This is like `Restore` except that restored tensor can be listed as filling\nonly a slice of a larger tensor.  `shape_and_slice` specifies the shape of the\nlarger tensor and the slice that the restored tensor covers.\n\nThe `shape_and_slice` input has the same format as the\nelements of the `shapes_and_slices` input of the `SaveSlices` op."
+  is_stateful: true
 }
 op {
   name: "RestoreV2"
@@ -19838,6 +19865,7 @@ op {
   }
   summary: "Restores tensors from a V2 checkpoint."
   description: "For backward compatibility with the V1 format, this Op currently allows\nrestoring from a V1 checkpoint as well:\n  - This Op first attempts to find the V2 index file pointed to by \"prefix\", and\n    if found proceed to read it as a V2 checkpoint;\n  - Otherwise the V1 read path is invoked.\nRelying on this behavior is not recommended, as the ability to fall back to read\nV1 might be deprecated and eventually removed.\n\nBy default, restores the named tensors in full.  If the caller wishes to restore\nspecific slices of stored tensors, \"shape_and_slices\" should be non-empty\nstrings and correspondingly well-formed.\n\nCallers must ensure all the named tensors are indeed stored in the checkpoint."
+  is_stateful: true
 }
 op {
   name: "Reverse"
@@ -20218,6 +20246,7 @@ op {
   }
   summary: "Saves the input tensors to disk."
   description: "The size of `tensor_names` must match the number of tensors in `data`. `data[i]`\nis written to `filename` with name `tensor_names[i]`.\n\nSee also `SaveSlices`."
+  is_stateful: true
 }
 op {
   name: "SaveSlices"
@@ -20249,6 +20278,7 @@ op {
   }
   summary: "Saves input tensors slices to disk."
   description: "This is like `Save` except that tensors can be listed in the saved file as being\na slice of a larger tensor.  `shapes_and_slices` specifies the shape of the\nlarger tensor and the slice that this tensor covers. `shapes_and_slices` must\nhave as many elements as `tensor_names`.\n\nElements of the `shapes_and_slices` input must either be:\n\n*  The empty string, in which case the corresponding tensor is\n   saved normally.\n*  A string of the form `dim0 dim1 ... dimN-1 slice-spec` where the\n   `dimI` are the dimensions of the larger tensor and `slice-spec`\n   specifies what part is covered by the tensor to save.\n\n`slice-spec` itself is a `:`-separated list: `slice0:slice1:...:sliceN-1`\nwhere each `sliceI` is either:\n\n*  The string `-` meaning that the slice covers all indices of this dimension\n*  `start,length` where `start` and `length` are integers.  In that\n   case the slice covers `length` indices starting at `start`.\n\nSee also `Save`."
+  is_stateful: true
 }
 op {
   name: "SaveV2"
@@ -20280,6 +20310,7 @@ op {
   }
   summary: "Saves tensors in V2 checkpoint format."
   description: "By default, saves the named tensors in full.  If the caller wishes to save\nspecific slices of full tensors, \"shape_and_slices\" should be non-empty strings\nand correspondingly well-formed."
+  is_stateful: true
 }
 op {
   name: "ScalarSummary"
@@ -21732,6 +21763,30 @@ op {
     }
   }
   summary: "Computes sin of x element-wise."
+}
+op {
+  name: "Sinh"
+  input_arg {
+    name: "x"
+    type_attr: "T"
+  }
+  output_arg {
+    name: "y"
+    type_attr: "T"
+  }
+  attr {
+    name: "T"
+    type: "type"
+    allowed_values {
+      list {
+        type: DT_FLOAT
+        type: DT_DOUBLE
+        type: DT_COMPLEX64
+        type: DT_COMPLEX128
+      }
+    }
+  }
+  summary: "Computes hyperbolic sine of x element-wise."
 }
 op {
   name: "Size"
@@ -26641,7 +26696,7 @@ op {
     description: "The gradient source string, used to decide which gradient TensorArray\nto return."
   }
   summary: "Creates a TensorArray for storing the gradients of values in the given handle."
-  description: "If the given TensorArray gradient already exists, returns a reference to it.\n\nLocks the size of the original TensorArray by disabling its dynamic size flag.\n\n**A note about the input flow_in:**\n\nThe handle flow_in forces the execution of the gradient lookup to occur\nonly after certain other operations have occurred.  For example, when\nthe forward TensorArray is dynamically sized, writes to this TensorArray\nmay resize the object.  The gradient TensorArray is statically sized based\non the size of the forward TensorArray when this operation executes.\nFurthermore, the size of the forward TensorArray is frozen by this call.\nAs a result, the flow is used to ensure that the call to generate the gradient\nTensorArray only happens after all writes are executed.\n\nIn the case of dynamically sized TensorArrays, gradient computation should\nonly be performed on read operations that have themselves been chained via\nflow to occur only after all writes have executed. That way the final size\nof the forward TensorArray is known when this operation is called.\n\n**A note about the source attribute:**\n\nTensorArray gradient calls use an accumulator TensorArray object.  If\nmultiple gradients are calculated and run in the same session, the multiple\ngradient nodes may accidentally flow throuth the same accumulator TensorArray.\nThis double counts and generally breaks the TensorArray gradient flow.\n\nThe solution is to identify which gradient call this particular\nTensorArray gradient is being called in.  This is performed by identifying\na unique string (e.g. \"gradients\", \"gradients_1\", ...) from the input\ngradient Tensor\'s name.  This string is used as a suffix when creating\nthe TensorArray gradient object here (the attribute `source`).\n\nThe attribute `source` is added as a suffix to the forward TensorArray\'s\nname when performing the creation / lookup, so that each separate gradient\ncalculation gets its own TensorArray accumulator."
+  description: "If the given TensorArray gradient already exists, returns a reference to it.\n\nLocks the size of the original TensorArray by disabling its dynamic size flag.\n\n**A note about the input flow_in:**\n\nThe handle flow_in forces the execution of the gradient lookup to occur\nonly after certain other operations have occurred.  For example, when\nthe forward TensorArray is dynamically sized, writes to this TensorArray\nmay resize the object.  The gradient TensorArray is statically sized based\non the size of the forward TensorArray when this operation executes.\nFurthermore, the size of the forward TensorArray is frozen by this call.\nAs a result, the flow is used to ensure that the call to generate the gradient\nTensorArray only happens after all writes are executed.\n\nIn the case of dynamically sized TensorArrays, gradient computation should\nonly be performed on read operations that have themselves been chained via\nflow to occur only after all writes have executed. That way the final size\nof the forward TensorArray is known when this operation is called.\n\n**A note about the source attribute:**\n\nTensorArray gradient calls use an accumulator TensorArray object.  If\nmultiple gradients are calculated and run in the same session, the multiple\ngradient nodes may accidentally flow through the same accumulator TensorArray.\nThis double counts and generally breaks the TensorArray gradient flow.\n\nThe solution is to identify which gradient call this particular\nTensorArray gradient is being called in.  This is performed by identifying\na unique string (e.g. \"gradients\", \"gradients_1\", ...) from the input\ngradient Tensor\'s name.  This string is used as a suffix when creating\nthe TensorArray gradient object here (the attribute `source`).\n\nThe attribute `source` is added as a suffix to the forward TensorArray\'s\nname when performing the creation / lookup, so that each separate gradient\ncalculation gets its own TensorArray accumulator."
   is_stateful: true
 }
 op {
