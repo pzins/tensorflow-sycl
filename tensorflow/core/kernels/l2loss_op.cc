@@ -90,14 +90,14 @@ REGISTER_GPU_KERNEL(Eigen::half);
 #endif  // GOOGLE_CUDA
 
 #ifdef TENSORFLOW_USE_SYCL
-#define REGISTER_KERNEL(T)                                       \
+#define REGISTER_SYCL_KERNEL(T)                                  \
   REGISTER_KERNEL_BUILDER(                                       \
       Name("L2Loss").Device(DEVICE_SYCL).TypeConstraint<T>("T"), \
       L2LossOp<SYCLDevice, T>);
 
-REGISTER_KERNEL(float);
-REGISTER_KERNEL(double);
-#undef REGISTER_KERNEL
+REGISTER_SYCL_KERNEL(float);
+REGISTER_SYCL_KERNEL(double);
+#undef REGISTER_SYCL_KERNEL
 #endif  // TENSORFLOW_USE_SYCL
 
 }  // namespace tensorflow
