@@ -121,7 +121,6 @@ load(
     "//third_party/mkl:build_defs.bzl",
     "if_mkl",
 )
-load("@local_config_sycl//sycl:build_defs.bzl", "if_sycl")
 
 # -----------------------------------------------------------------------------
 # Public targets
@@ -820,7 +819,7 @@ cc_library(
         ":test",
         "//tensorflow/core/kernels:constant_op",
         "//tensorflow/core/kernels:ops_util",
-        "//tensorflow/core/platform/default/build_config:gtest",  # + if_sycl([":sycl_runtime"])
+        "//tensorflow/core/platform/default/build_config:gtest",
     ],
 )
 
@@ -1333,7 +1332,7 @@ cc_library(
         "//tensorflow/core/platform/default/build_config:platformlib",
         "@snappy",
         "@zlib_archive//:zlib",
-    ] + if_sycl(["@local_config_sycl//sycl:syclrt"]),
+    ],
 )
 
 # File compiled with extra flags to get cpu-specific acceleration.
@@ -1860,9 +1859,9 @@ cc_library(
         ":lib_internal",
         ":proto_text",
         "//third_party/eigen3",
-        "@local_config_sycl//sycl:sycl_headers",
+        "@local_config_sycl//sycl:sycl",
     ],
-    alwayslink = 1,
+    alwayslink = 0,
 )
 
 # -----------------------------------------------------------------------------
