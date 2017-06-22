@@ -1333,7 +1333,7 @@ cc_library(
         "//tensorflow/core/platform/default/build_config:platformlib",
         "@snappy",
         "@zlib_archive//:zlib",
-    ],
+    ] + if_sycl(["@local_config_sycl//sycl:syclrt"]),
 )
 
 # File compiled with extra flags to get cpu-specific acceleration.
