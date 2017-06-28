@@ -118,6 +118,8 @@ class StridedSliceOp : public OpKernel {
       return;
     }
 
+// This optimization is currently not applicable for SYCL devices
+#ifndef TENSORFLOW_USE_SYCL
     // Optimization #2, slice is memory contiguous (only occurs in dim 0)
     if (slice_dim0 && IsDim0SliceAligned<T>(input.shape(), begin[0], end[0])) {
       CHECK_GE(input.dims(), 1);  // Otherwise, is_identity should be true.
@@ -127,6 +129,7 @@ class StridedSliceOp : public OpKernel {
       context->set_output(0, tmp);
       return;
     }
+#endif  // TENSORFLOW_USE_SYCL
 
     Tensor* result = nullptr;
     OP_REQUIRES_OK(context, context->allocate_output(0, final_shape, &result));
@@ -567,5 +570,5 @@ REGISTER_KERNEL_BUILDER(Name("ResourceStridedSliceAssign")
                             .HostMemory("strides"),
                         StridedSliceAssignOp<CPUDevice, int32>)
 #undef REGISTER_SYCL
-#endif // TENSORFLOW_USE_SYCL
+#endif  // TENSORFLOW_USE_SYCL
 }  // namespace tensorflow

@@ -121,6 +121,9 @@ class BiasOp : public BinaryOp<T> {
 TF_CALL_NUMBER_TYPES(REGISTER_KERNEL);
 #undef REGISTER_KERNEL
 
+// TODO: {liwanski} Temporary disabled due to
+// https://github.com/lukeiwanski/tensorflow/issues/101
+#if 0
 #ifdef TENSORFLOW_USE_SYCL
 #define REGISTER_KERNEL(type)                                          \
   REGISTER_KERNEL_BUILDER(                                             \
@@ -133,6 +136,7 @@ TF_CALL_NUMBER_TYPES(REGISTER_KERNEL);
 TF_CALL_GPU_NUMBER_TYPES_NO_HALF(REGISTER_KERNEL);
 #undef REGISTER_KERNEL
 #endif  // TENSORFLOW_USE_SYCL
+#endif
 
 namespace {
 
@@ -245,6 +249,9 @@ class BiasGradOp : public OpKernel {
 TF_CALL_NUMBER_TYPES(REGISTER_KERNEL);
 #undef REGISTER_KERNEL
 
+// TODO: {liwanski} Temporary disabled due to
+// https://github.com/lukeiwanski/tensorflow/issues/101
+#if 0
 #ifdef TENSORFLOW_USE_SYCL
 #define REGISTER_KERNEL(type)                                            \
   REGISTER_KERNEL_BUILDER(                                               \
@@ -254,6 +261,7 @@ TF_CALL_NUMBER_TYPES(REGISTER_KERNEL);
 TF_CALL_GPU_NUMBER_TYPES_NO_HALF(REGISTER_KERNEL);
 #undef REGISTER_KERNEL
 #endif  // TENSORFLOW_USE_SYCL
+#endif
 
 #if GOOGLE_CUDA
 template <typename T>
