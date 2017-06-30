@@ -532,7 +532,7 @@ class ApplyGradientDescentOp : public OpKernel {
     OP_REQUIRES(
         ctx, var.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(0)));
+            "Attempting to use uninitialized variables: ", requested_input(0)));
     const Tensor& alpha = ctx->input(1);
     OP_REQUIRES(ctx, IsLegacyScalar(alpha.shape()),
                 errors::InvalidArgument("alpha is not a scalar: ",
@@ -571,7 +571,7 @@ class ApplyGradientDescentOp < SYCLDevice, T > : public OpKernel {
     OP_REQUIRES(
         ctx, var.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(0)));
+            "Attempting to use uninitialized variables: ", requested_input(0)));
     const Tensor& alpha_dev = ctx->input(1);
     OP_REQUIRES(ctx, IsLegacyScalar(alpha_dev.shape()),
                 errors::InvalidArgument("alpha is not a scalar: ",
@@ -660,7 +660,7 @@ class ApplyDelayCompensatedGradientDescentOp : public OpKernel {
     OP_REQUIRES(
         ctx, var.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(0)));
+            "Attempting to use uninitialized variables: ", requested_input(0)));
     const Tensor& alpha = ctx->input(1);
     OP_REQUIRES(ctx, IsLegacyScalar(alpha.shape()),
                 errors::InvalidArgument("alpha is not a scalar: ",
@@ -755,15 +755,15 @@ class ApplyAdadeltaOp : public OpKernel {
     OP_REQUIRES(
         ctx, var.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(0)));
+            "Attempting to use uninitialized variables: ", requested_input(0)));
     OP_REQUIRES(
         ctx, accum.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(1)));
+            "Attempting to use uninitialized variables: ", requested_input(1)));
     OP_REQUIRES(
         ctx, accum_update.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(2)));
+            "Attempting to use uninitialized variables: ", requested_input(2)));
 
     const Tensor& lr = ctx->input(3);
     const Tensor& rho = ctx->input(4);
@@ -897,15 +897,15 @@ class SparseApplyAdadeltaOp : public OpKernel {
     OP_REQUIRES(
         ctx, var.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(0)));
+            "Attempting to use uninitialized variables: ", requested_input(0)));
     OP_REQUIRES(
         ctx, accum_grad.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(1)));
+            "Attempting to use uninitialized variables: ", requested_input(1)));
     OP_REQUIRES(
         ctx, accum_update.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(2)));
+            "Attempting to use uninitialized variables: ", requested_input(2)));
     OP_REQUIRES(
         ctx, var.shape().IsSameSize(accum_grad.shape()),
         errors::InvalidArgument("var and accum_grad do not have the same shape",
@@ -1037,7 +1037,7 @@ class ApplyProximalGradientDescentOp : public OpKernel {
     OP_REQUIRES(
         ctx, var.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(0)));
+            "Attempting to use uninitialized variables: ", requested_input(0)));
     const Tensor& alpha = ctx->input(1);
     OP_REQUIRES(ctx, IsLegacyScalar(alpha.shape()),
                 errors::InvalidArgument("alpha is not a scalar: ",
@@ -1252,11 +1252,11 @@ class ApplyAdagradOp : public OpKernel {
     OP_REQUIRES(
         ctx, var.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(0)));
+            "Attempting to use uninitialized variables: ", requested_input(0)));
     OP_REQUIRES(
         ctx, accum.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(1)));
+            "Attempting to use uninitialized variables: ", requested_input(1)));
     const Tensor& lr = ctx->input(2);
     OP_REQUIRES(ctx, IsLegacyScalar(lr.shape()),
                 errors::InvalidArgument("lr is not a scalar: ",
@@ -1352,11 +1352,11 @@ class ApplyProximalAdagradOp : public OpKernel {
     OP_REQUIRES(
         ctx, var.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(0)));
+            "Attempting to use uninitialized variables: ", requested_input(0)));
     OP_REQUIRES(
         ctx, accum.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(1)));
+            "Attempting to use uninitialized variables: ", requested_input(1)));
     OP_REQUIRES(
         ctx, var.shape().IsSameSize(accum.shape()),
         errors::InvalidArgument("var and accum do not have the same shape",
@@ -1459,11 +1459,11 @@ class SparseApplyAdagradOp : public OpKernel {
     OP_REQUIRES(
         ctx, var.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(0)));
+            "Attempting to use uninitialized variables: ", requested_input(0)));
     OP_REQUIRES(
         ctx, accum.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(1)));
+            "Attempting to use uninitialized variables: ", requested_input(1)));
     OP_REQUIRES(
         ctx, var.shape().IsSameSize(accum.shape()),
         errors::InvalidArgument("var and accum do not have the same shape",
@@ -1593,11 +1593,11 @@ class SparseApplyProximalAdagradOp : public OpKernel {
     OP_REQUIRES(
         ctx, var.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(0)));
+            "Attempting to use uninitialized variables: ", requested_input(0)));
     OP_REQUIRES(
         ctx, accum.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(1)));
+            "Attempting to use uninitialized variables: ", requested_input(1)));
     OP_REQUIRES(
         ctx, var.shape().IsSameSize(accum.shape()),
         errors::InvalidArgument("var and accum do not have the same shape",
@@ -1768,15 +1768,15 @@ class ApplyAdagradDAOp : public OpKernel {
     OP_REQUIRES(
         ctx, var.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(0)));
+            "Attempting to use uninitialized variables: ", requested_input(0)));
     OP_REQUIRES(
         ctx, gradient_accum.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(1)));
+            "Attempting to use uninitialized variables: ", requested_input(1)));
     OP_REQUIRES(
         ctx, gradient_squared_accum.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(2)));
+            "Attempting to use uninitialized variables: ", requested_input(2)));
     OP_REQUIRES(
         ctx, var.shape().IsSameSize(gradient_accum.shape()),
         errors::InvalidArgument("var and accum do not have the same shape",
@@ -1870,15 +1870,15 @@ class SparseApplyAdagradDAOp : public OpKernel {
     OP_REQUIRES(
         ctx, var.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(0)));
+            "Attempting to use uninitialized variables: ", requested_input(0)));
     OP_REQUIRES(
         ctx, gradient_accum.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(1)));
+            "Attempting to use uninitialized variables: ", requested_input(1)));
     OP_REQUIRES(
         ctx, gradient_squared_accum.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(2)));
+            "Attempting to use uninitialized variables: ", requested_input(2)));
     OP_REQUIRES(
         ctx, var.shape().IsSameSize(gradient_accum.shape()),
         errors::InvalidArgument("var and accum do not have the same shape",
@@ -2067,15 +2067,15 @@ class ApplyFtrlOp : public OpKernel {
     OP_REQUIRES(
         ctx, var.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(0)));
+            "Attempting to use uninitialized variables: ", requested_input(0)));
     OP_REQUIRES(
         ctx, accum.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(1)));
+            "Attempting to use uninitialized variables: ", requested_input(1)));
     OP_REQUIRES(
         ctx, linear.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(2)));
+            "Attempting to use uninitialized variables: ", requested_input(2)));
 
     const Tensor& grad = ctx->input(3);
     OP_REQUIRES(
@@ -2181,15 +2181,15 @@ class SparseApplyFtrlOp : public OpKernel {
     OP_REQUIRES(
         ctx, var.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(0)));
+            "Attempting to use uninitialized variables: ", requested_input(0)));
     OP_REQUIRES(
         ctx, accum.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(1)));
+            "Attempting to use uninitialized variables: ", requested_input(1)));
     OP_REQUIRES(
         ctx, linear.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(2)));
+            "Attempting to use uninitialized variables: ", requested_input(2)));
     OP_REQUIRES(
         ctx, var.shape().IsSameSize(accum.shape()),
         errors::InvalidArgument("var and accum do not have the same shape",
@@ -2389,11 +2389,11 @@ class ApplyMomentumOp : public OpKernel {
     OP_REQUIRES(
         ctx, var.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(0)));
+            "Attempting to use uninitialized variables: ", requested_input(0)));
     OP_REQUIRES(
         ctx, accum.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(1)));
+            "Attempting to use uninitialized variables: ", requested_input(1)));
     const Tensor& lr = ctx->input(2);
     OP_REQUIRES(ctx, TensorShapeUtils::IsScalar(lr.shape()),
                 errors::InvalidArgument("lr is not a scalar: ",
@@ -2498,11 +2498,11 @@ class SparseApplyMomentumOp : public OpKernel {
     OP_REQUIRES(
         ctx, var.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(0)));
+            "Attempting to use uninitialized variables: ", requested_input(0)));
     OP_REQUIRES(
         ctx, accum.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(1)));
+            "Attempting to use uninitialized variables: ", requested_input(1)));
     OP_REQUIRES(
         ctx, var.shape().IsSameSize(accum.shape()),
         errors::InvalidArgument("var and accum do not have the same shape",
@@ -2618,15 +2618,15 @@ class ApplyAdamOp : public OpKernel {
     OP_REQUIRES(
         ctx, var.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(0)));
+            "Attempting to use uninitialized variables: ", requested_input(0)));
     OP_REQUIRES(
         ctx, m.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(1)));
+            "Attempting to use uninitialized variables: ", requested_input(1)));
     OP_REQUIRES(
         ctx, v.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(2)));
+            "Attempting to use uninitialized variables: ", requested_input(2)));
 
     const Tensor& beta1_power = ctx->input(3);
     const Tensor& beta2_power = ctx->input(4);
@@ -2764,15 +2764,15 @@ class ApplyRMSPropOp : public OpKernel {
     OP_REQUIRES(
         ctx, var.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(0)));
+            "Attempting to use uninitialized variables: ", requested_input(0)));
     OP_REQUIRES(
         ctx, ms.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(1)));
+            "Attempting to use uninitialized variables: ", requested_input(1)));
     OP_REQUIRES(
         ctx, mom.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(2)));
+            "Attempting to use uninitialized variables: ", requested_input(2)));
 
     const Tensor& lr = ctx->input(3);
     const Tensor& rho = ctx->input(4);
@@ -2849,19 +2849,19 @@ class ApplyCenteredRMSPropOp : public OpKernel {
     OP_REQUIRES(
         ctx, var.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(0)));
+            "Attempting to use uninitialized variables: ", requested_input(0)));
     OP_REQUIRES(
         ctx, mg.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(1)));
+            "Attempting to use uninitialized variables: ", requested_input(1)));
     OP_REQUIRES(
         ctx, ms.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(2)));
+            "Attempting to use uninitialized variables: ", requested_input(2)));
     OP_REQUIRES(
         ctx, mom.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(3)));
+            "Attempting to use uninitialized variables: ", requested_input(3)));
 
     const Tensor& lr = ctx->input(4);
     const Tensor& rho = ctx->input(5);
@@ -3016,15 +3016,15 @@ class SparseApplyRMSPropOp : public OpKernel {
     OP_REQUIRES(
         ctx, var.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(0)));
+            "Attempting to use uninitialized variables: ", requested_input(0)));
     OP_REQUIRES(
         ctx, ms.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(1)));
+            "Attempting to use uninitialized variables: ", requested_input(1)));
     OP_REQUIRES(
         ctx, mom.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(2)));
+            "Attempting to use uninitialized variables: ", requested_input(2)));
 
     const Tensor& lr = ctx->input(3);
     const Tensor& rho = ctx->input(4);
@@ -3148,15 +3148,15 @@ class SparseApplyCenteredRMSPropOp : public OpKernel {
     OP_REQUIRES(
         ctx, var.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(0)));
+            "Attempting to use uninitialized variables: ", requested_input(0)));
     OP_REQUIRES(
         ctx, ms.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(2)));
+            "Attempting to use uninitialized variables: ", requested_input(2)));
     OP_REQUIRES(
         ctx, mom.IsInitialized(),
         errors::FailedPrecondition(
-            "Attempting to use uninitialized variables: ", def().input(3)));
+            "Attempting to use uninitialized variables: ", requested_input(3)));
 
     const Tensor& lr = ctx->input(4);
     const Tensor& rho = ctx->input(5);
