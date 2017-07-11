@@ -825,7 +825,6 @@ cc_library(
         ":test",
         "//tensorflow/core/kernels:constant_op",
         "//tensorflow/core/kernels:ops_util",
-        "//tensorflow/core/platform/default/build_config:gtest",
     ],
 )
 
@@ -1222,6 +1221,7 @@ LIB_INTERNAL_WINDOWS_DEPS = glob(
         "platform/*.cc",
         "platform/profile_utils/**/*.h",
         "platform/profile_utils/**/*.cc",
+    ] + [
         "framework/resource_handle.h",
         "framework/resource_handle.cc",
     ],
@@ -1717,7 +1717,7 @@ cc_library(
     ],
     visibility = [
         "//tensorflow/compiler:__subpackages__",
-        "//tensorflow/tools/tfprof:__subpackages__",
+        "//tensorflow/core/profiler:__subpackages__",
     ],
     deps = [":lib_internal"],
 )
@@ -2105,6 +2105,17 @@ cc_test(
     deps = [
         ":lib",
         ":lib_internal",
+        ":test",
+        ":test_main",
+    ],
+)
+
+tf_cc_test(
+    name = "framework_op_gen_lib_test",
+    size = "small",
+    srcs = ["framework/op_gen_lib_test.cc"],
+    deps = [
+        ":op_gen_lib",
         ":test",
         ":test_main",
     ],
