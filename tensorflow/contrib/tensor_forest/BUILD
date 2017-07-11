@@ -13,6 +13,7 @@ load("//tensorflow:tensorflow.bzl", "tf_gen_op_wrapper_py")
 load("//tensorflow:tensorflow.bzl", "tf_custom_op_library")
 load("//tensorflow:tensorflow.bzl", "tf_kernel_library")
 load("//tensorflow:tensorflow.bzl", "tf_custom_op_py_library")
+load("@local_config_sycl//sycl:build_defs.bzl", "if_not_sycl")
 
 filegroup(
     name = "all_files",
@@ -317,9 +318,7 @@ tf_custom_op_library(
     srcs = [
         "ops/stats_ops.cc",
     ],
-    deps = [
-        ":stats_ops_lib",
-    ],
+    deps = if_not_sycl([":stats_ops_lib"]),
 )
 
 tf_custom_op_py_library(
