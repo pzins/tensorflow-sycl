@@ -55,9 +55,9 @@ TF_CALL_complex128(DECLARE_GPU_SPECS);
 // Stripped down version of CPU functor which uses Eigen loops to copy slices
 template <typename T, typename Index>
 struct GatherFunctor<SYCLDevice, T, Index> {
-  int64 operator()(const SYCLDevice& d, typename TTypes<T>::ConstMatrix params,
+  int64 operator()(const SYCLDevice& d, typename TTypes<T, 3>::ConstTensor params,
                    typename TTypes<Index>::ConstFlat indices,
-                   typename TTypes<T>::Matrix out) {
+                   typename TTypes<T, 3>::Tensor out) {
     const Index first_dim_size = static_cast<Index>(indices.dimension(0));
     const Index limit = static_cast<Index>(params.dimension(0));
 
