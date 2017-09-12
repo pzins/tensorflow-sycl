@@ -113,6 +113,23 @@ TF_CALL_GPU_ALL_TYPES(REGISTER_GPU_KERNELS);
 #undef REGISTER_GPU_KERNELS
 #endif  // GOOGLE_CUDA
 
+#ifdef TENSORFLOW_USE_SYCL
+#define REGISTER_SYCL_KERNELS(type)                            \
+  REGISTER_KERNEL_BUILDER(Name("VarHandleOp")                  \
+                              .Device(DEVICE_SYCL)             \
+                              .HostMemory("resource")          \
+                              .TypeConstraint<type>("dtype"),  \
+                          ResourceHandleOp<Var>)               \
+  REGISTER_KERNEL_BUILDER(Name("ReadVariableOp")               \
+                              .Device(DEVICE_SYCL)             \
+                              .TypeConstraint<type>("dtype")   \
+                              .HostMemory("resource"),         \
+                          ReadVariableOp<SYCLDevice, type>);
+
+TF_CALL_float(REGISTER_SYCL_KERNELS) TF_CALL_double(REGISTER_SYCL_KERNELS)
+#undef REGISTER_SYCL_KERNELS
+#endif  // TENSORFLOW_USE_SYCL
+
 class UnsafeReadVariableOp : public OpKernel {
  public:
   explicit UnsafeReadVariableOp(OpKernelConstruction* c) : OpKernel(c) {}
@@ -136,6 +153,12 @@ REGISTER_KERNEL_BUILDER(
     UnsafeReadVariableOp);
 
 #endif  // GOOGLE_CUDA
+
+#ifdef TENSORFLOW_USE_SYCL
+REGISTER_KERNEL_BUILDER(
+    Name("_UnsafeReadVariable").Device(DEVICE_SYCL).HostMemory("resource"),
+    UnsafeReadVariableOp);
+#endif  // TENSORFLOW_USE_SYCL
 
 template <typename T>
 class VariableShapeOp : public OpKernel {
@@ -179,6 +202,21 @@ REGISTER_KERNEL_BUILDER(Name("VariableShape")
                         VariableShapeOp<int64>);
 
 #endif  // GOOGLE_CUDA
+
+#ifdef TENSORFLOW_USE_SYCL
+REGISTER_KERNEL_BUILDER(Name("VariableShape")
+                            .Device(DEVICE_SYCL)
+                            .TypeConstraint<int32>("out_type")
+                            .HostMemory("output")
+                            .HostMemory("input"),
+                        VariableShapeOp<int32>);
+REGISTER_KERNEL_BUILDER(Name("VariableShape")
+                            .Device(DEVICE_SYCL)
+                            .TypeConstraint<int64>("out_type")
+                            .HostMemory("output")
+                            .HostMemory("input"),
+                        VariableShapeOp<int64>);
+#endif  // TENSORFLOW_USE_SYCL
 
 class DestroyResourceOp : public OpKernel {
  public:
@@ -291,6 +329,18 @@ TF_CALL_GPU_ALL_TYPES(REGISTER_GPU_KERNELS);
 #undef REGISTER_GPU_KERNELS
 #endif  // GOOGLE_CUDA
 
+#ifdef TENSORFLOW_USE_SYCL
+#define REGISTER_SYCL_KERNELS(type)                          \
+  REGISTER_KERNEL_BUILDER(Name("AssignVariableOp")           \
+                              .Device(DEVICE_SYCL)           \
+                              .TypeConstraint<type>("dtype") \
+                              .HostMemory("resource"),       \
+                          AssignVariableOp<SYCLDevice, type>);
+
+TF_CALL_GPU_ALL_TYPES(REGISTER_SYCL_KERNELS);
+#undef REGISTER_SYCL_KERNELS
+#endif  // TENSORFLOW_USE_SYCL
+
 template <typename Device, typename T, DenseUpdateType Op>
 class AssignUpdateVariableOp : public OpKernel {
  public:
@@ -347,6 +397,23 @@ TF_CALL_GPU_NUMBER_TYPES(REGISTER_GPU_KERNELS);
 #undef REGISTER_GPU_KERNELS
 #endif  // GOOGLE_CUDA
 
+#ifdef TENSORFLOW_USE_SYCL
+#define REGISTER_SYCL_KERNELS(type)                                      \
+  REGISTER_KERNEL_BUILDER(Name("AssignAddVariableOp")                    \
+                              .Device(DEVICE_SYCL)                       \
+                              .HostMemory("resource")                    \
+                              .TypeConstraint<type>("dtype"),            \
+                          AssignUpdateVariableOp<SYCLDevice, type, ADD>);\
+  REGISTER_KERNEL_BUILDER(Name("AssignSubVariableOp")                    \
+                              .Device(DEVICE_SYCL)                       \
+                              .HostMemory("resource")                    \
+                              .TypeConstraint<type>("dtype"),            \
+                          AssignUpdateVariableOp<SYCLDevice, type, SUB>);
+
+TF_CALL_float(REGISTER_SYCL_KERNELS) TF_CALL_double(REGISTER_SYCL_KERNELS)
+#undef REGISTER_SYCL_KERNELS
+#endif  // TENSORFLOW_USE_SYCL
+
 REGISTER_KERNEL_BUILDER(Name("VarIsInitializedOp").Device(DEVICE_CPU),
                         IsResourceInitialized<Var>);
 
@@ -357,6 +424,14 @@ REGISTER_KERNEL_BUILDER(Name("VarIsInitializedOp")
                             .HostMemory("is_initialized"),
                         IsResourceInitialized<Var>);
 #endif  // GOOGLE_CUDA
+
+#ifdef TENSORFLOW_USE_SYCL
+REGISTER_KERNEL_BUILDER(Name("VarIsInitializedOp")
+                            .Device(DEVICE_SYCL)
+                            .HostMemory("resource")
+                            .HostMemory("is_initialized"),
+                        IsResourceInitialized<Var>);
+#endif  // TENSORFLOW_USE_SYCL
 
 template <typename Device, typename T, typename Index>
 class ResourceGatherOp : public OpKernel {
@@ -516,6 +591,15 @@ TF_CALL_NUMBER_TYPES(REGISTER_SCATTER_ARITHEMTIC_CPU);
 TF_CALL_GPU_NUMBER_TYPES_NO_HALF(REGISTER_SCATTER_ARITHEMTIC_GPU);
 
 #endif  // GOOGLE_CUDA
+
+#ifdef TENSORFLOW_USE_SYCL
+#define REGISTER_SCATTER_ARITHEMTIC_SYCL(type) \
+  REGISTER_SCATTER_ARITHEMTIC(type, SYCL);
+
+#define REGISTER_SCATTER_UPDATE_SYCL(type) REGISTER_SCATTER_UPDATE(type, SYCL);
+
+TF_CALL_GPU_NUMBER_TYPES_NO_HALF(REGISTER_SCATTER_ARITHEMTIC_SYCL);
+#endif  // TENSORFLOW_USE_SYCL
 
 #undef REGISTER_SCATTER_ARITHEMTIC
 #undef REGISTER_SCATTER_ARITHEMTIC_CPU
