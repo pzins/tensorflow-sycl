@@ -36,6 +36,7 @@ from tensorflow.core.framework import graph_pb2
 from tensorflow.core.framework import node_def_pb2
 from tensorflow.core.framework import versions_pb2
 from tensorflow.python import pywrap_tensorflow as c_api
+from tensorflow.python.client import device_lib
 from tensorflow.python.eager import context
 from tensorflow.python.eager import core
 from tensorflow.python.framework import c_api_util
@@ -76,7 +77,7 @@ def tensor_id(t):
 
 
 def _in_gpu_device():
-  return "GPU" == context.context().device_spec.device_type
+  return device_lib.gpu_device_type() == context.context().device_spec.device_type
 
 
 @tf_contextlib.contextmanager
@@ -831,7 +832,8 @@ class EagerTensor(Tensor):
       A GPU-memory backed Tensor object initialized with the same contents
       as this Tensor.
     """
-    return self._copy(context.context(), "GPU:" + str(gpu_index))
+    return self._copy(
+        context.context(), str(device_lib.gpu_device_type() + ":" + str(gpu_index)))
 
   def __bool__(self):
     if self._shape_tuple() != ():  # pylint: disable=g-explicit-bool-comparison
