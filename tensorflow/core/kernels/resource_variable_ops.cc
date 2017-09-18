@@ -407,7 +407,7 @@ TF_CALL_GPU_NUMBER_TYPES(REGISTER_GPU_KERNELS);
                               .TypeConstraint<type>("dtype"),            \
                           AssignUpdateVariableOp<SYCLDevice, type, SUB>);
 
-TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL_KERNELS)
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL_KERNELS);
 #undef REGISTER_SYCL_KERNELS
 #endif  // TENSORFLOW_USE_SYCL
 
