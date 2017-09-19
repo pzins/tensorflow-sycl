@@ -108,6 +108,22 @@ struct LaunchConv2DBackpropInputOp<CPUDevice, T> {
   }
 };
 
+#ifdef TENSORFLOW_USE_SYCL
+template <typename T>
+struct LaunchConv2DBackpropInputOp<SYCLDevice, T> {
+  void operator()(OpKernelContext* ctx, bool use_cudnn, bool cudnn_use_autotune,
+                  const Tensor& out_backprop, const Tensor& input,
+                  int row_stride, int col_stride, const Padding& padding,
+                  Tensor* filter_backprop, TensorFormat data_format) {
+    const SYCLDevice& d = ctx->eigen_device<SYCLDevice>();
+    functor::SpatialConvolutionBackwardInput<SYCLDevice, T>()(
+        d, filter_backprop->tensor<T, 4>(), input.tensor<T, 4>(),
+        out_backprop.tensor<T, 4>(), filter_backprop->dim_size(0),
+        filter_backprop->dim_size(1), row_stride, col_stride);
+  }
+};
+#endif  // TENSORFLOW_USE_SYCL
+
 #ifdef TENSORFLOW_USE_LIBXSMM
 template <typename Device, class T>
 struct LaunchXsmmBackwardFilter {
@@ -951,7 +967,8 @@ REGISTER_KERNEL_BUILDER(Name("Conv2DBackpropFilter")
                               .TypeConstraint<T>("T")      \
                               .HostMemory("filter_sizes"), \
                           Conv2DFastBackpropFilterOp<SYCLDevice, T>);
-TF_CALL_GPU_NUMBER_TYPES_NO_HALF(REGISTER_SYCL_KERNELS);
+
+REGISTER_SYCL_KERNELS(float);
 #undef REGISTER_SYCL_KERNELS
 #endif  // TENSORFLOW_USE_SYCL
 

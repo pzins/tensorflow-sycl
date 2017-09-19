@@ -132,24 +132,22 @@ struct LaunchConv2DOp<CPUDevice, T> {
 
 #ifdef TENSORFLOW_USE_SYCL
 template <typename T>
-class LaunchConv2DOp<SYCLDevice, T> {
- public:
-  void launch(OpKernelContext* ctx, bool use_cudnn, bool cudnn_use_autotune,
-              const Tensor& input, const Tensor& filter, int row_stride,
-              int col_stride, const Eigen::PaddingType& padding, Tensor* output,
-              TensorFormat data_format) {
+struct LaunchConv2DOp<SYCLDevice, T> {
+  void operator()(OpKernelContext* ctx, bool use_cudnn, bool cudnn_use_autotune,
+                  const Tensor& input, const Tensor& filter, int row_stride,
+                  int col_stride, const Padding& padding, Tensor* output,
+                  TensorFormat data_format) {
     if (data_format != FORMAT_NHWC) {
       ctx->SetStatus(
-          errors::Unimplemented("SYCL conv implementation only supports "
+          errors::Unimplemented("Generic conv implementation only supports "
                                 "NHWC tensor format for now."));
       return;
     }
-    LaunchGeneric<SYCLDevice, T>::launch(ctx, input, filter, row_stride,
-                                        col_stride, padding, output,
-                                        data_format);
+    LaunchGeneric<SYCLDevice, T>()(ctx, input, filter, row_stride, col_stride,
+                                  padding, output, data_format);
   }
 };
-#endif // TENSORFLOW_USE_SYCL
+#endif  // TENSORFLOW_USE_SYCL
 
 template <typename Device, typename T>
 class LaunchDeepConvOp {

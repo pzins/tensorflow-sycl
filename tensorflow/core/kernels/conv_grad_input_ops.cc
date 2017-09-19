@@ -115,19 +115,17 @@ struct LaunchConv2DBackpropInputOp<CPUDevice, T> {
 };
 
 #ifdef TENSORFLOW_USE_SYCL
-// Provide SYCL convolution backprop through Eigen.
 template <typename T>
-struct LaunchBackwardInputConvolution<SYCLDevice, T> {
-  bool operator()(OpKernelContext* context, const SYCLDevice& d,
-                  typename TTypes<T, 4>::Tensor input_backward,
-                  typename TTypes<T, 4>::ConstTensor kernel,
-                  typename TTypes<T, 4>::ConstTensor output_backward,
-                  int input_rows, int input_cols, int row_stride,
-                  int col_stride, TensorFormat data_format) const {
+struct LaunchConv2DBackpropInputOp<SYCLDevice, T> {
+  void operator()(OpKernelContext* ctx, bool use_cudnn, bool cudnn_use_autotune,
+                  const Tensor& out_backprop, const Tensor& filter,
+                  int row_stride, int col_stride, const Padding& padding,
+                  Tensor* in_backprop, TensorFormat data_format) {
+    const SYCLDevice& d = ctx->eigen_device<SYCLDevice>();
     functor::SpatialConvolutionBackwardInput<SYCLDevice, T>()(
-        d, input_backward, kernel, output_backward, input_rows, input_cols,
-        row_stride, col_stride);
-    return true;
+        d, in_backprop->tensor<T, 4>(), filter.tensor<T, 4>(),
+        out_backprop.tensor<T, 4>(), in_backprop->dim_size(1),
+        in_backprop->dim_size(2), row_stride, col_stride);
   }
 };
 #endif  // TENSORFLOW_USE_SYCL
@@ -1048,7 +1046,7 @@ REGISTER_KERNEL_BUILDER(Name("Conv2DBackpropInput")
                               .HostMemory("input_sizes"), \
                           Conv2DFastBackpropInputOp<SYCLDevice, T>);
 
-TF_CALL_GPU_NUMBER_TYPES_NO_HALF(REGISTER_SYCL_KERNELS);
+REGISTER_SYCL_KERNELS(float);
 #undef REGISTER_SYCL_KERNELS
 #endif  // TENSORFLOW_USE_SYCL
 }  // namespace tensorflow
