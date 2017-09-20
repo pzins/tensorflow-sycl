@@ -27,6 +27,7 @@ package_group(
 
 load(
     "//tensorflow:tensorflow.bzl",
+    "if_android",
     "tf_cc_test",
     "tf_cc_tests",
     "tf_copts",
@@ -664,7 +665,9 @@ tf_kernel_library(
 tf_kernel_library(
     name = "matrix_band_part_op",
     prefix = "matrix_band_part_op",
-    deps = ARRAY_DEPS,
+    deps = if_cuda([
+        ":cuda_solvers",
+    ]) + ARRAY_DEPS,
 )
 
 tf_kernel_library(
@@ -1333,7 +1336,7 @@ tf_kernel_library(
         "transpose_functor_gpu.cu.cc",
         "transpose_functor.h",
     ],
-    visibility = ["//visibility:private"],
+    visibility = [":friends"],
     deps = [
         ":ops_util",
         "//tensorflow/core:framework",
@@ -2333,7 +2336,11 @@ tf_kernel_library(
 tf_kernel_library(
     name = "qr_op",
     prefix = "qr_op",
-    deps = LINALG_DEPS,
+    deps = LINALG_DEPS + if_cuda([
+        ":cuda_solvers",
+        ":transpose_functor",
+        ":matrix_band_part_op",
+    ]),
 )
 
 tf_kernel_library(
@@ -4737,16 +4744,9 @@ cc_library(
 
 cc_library(
     name = "android_tensorflow_image_op",
-    srcs = [
-        "decode_image_op.cc",
-    ],
+    srcs = if_android(["decode_image_op.cc"]),
     copts = tf_copts(),
-    linkopts = select({
-        "//tensorflow:android": [
-            "-ldl",
-        ],
-        "//conditions:default": [],
-    }),
+    linkopts = ["-ldl"],
     tags = [
         "manual",
         "notap",

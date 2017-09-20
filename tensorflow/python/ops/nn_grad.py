@@ -19,7 +19,6 @@ from __future__ import division
 from __future__ import print_function
 
 from tensorflow.python.eager import context
-from tensorflow.python.eager import tensor
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_util
@@ -423,13 +422,14 @@ def _SoftmaxCrossEntropyWithLogitsGrad(op, grad_loss, grad_grad):
   def IsZero(g):
     # Some introspection to check if the gradient is feeding zeros
     if context.in_eager_mode():
-      return isinstance(g, tensor.LazyZero)
+      # TODO(apassos) add an efficient way to detect eager zeros here.
+      return False
     if g.op.type in ("ZerosLike", "Zeros"):
       return True
     const_fill_value = tensor_util.constant_value(g)
     return const_fill_value is not None and (const_fill_value == 0).all()
 
-  if not IsZero(grad_grad):
+  if grad_grad is not None and not IsZero(grad_grad):
     logits = op.inputs[0]
     softmax = nn_ops.softmax(logits)
 

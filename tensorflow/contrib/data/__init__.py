@@ -20,11 +20,11 @@
 @@FixedLengthRecordDataset
 @@TextLineDataset
 
+@@batch_and_drop_remainder
 @@read_batch_features
 @@rejection_resample
 @@group_by_window
 @@sloppy_interleave
-@@sloppy_map
 """
 
 from __future__ import absolute_import
@@ -32,6 +32,7 @@ from __future__ import division
 from __future__ import print_function
 
 # pylint: disable=unused-import
+from tensorflow.contrib.data.python.ops.dataset_ops import batch_and_drop_remainder
 from tensorflow.contrib.data.python.ops.dataset_ops import Dataset
 from tensorflow.contrib.data.python.ops.dataset_ops import FixedLengthRecordDataset
 from tensorflow.contrib.data.python.ops.dataset_ops import group_by_window

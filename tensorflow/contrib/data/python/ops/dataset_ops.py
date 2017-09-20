@@ -23,10 +23,10 @@ import threading
 
 import numpy as np
 
-from tensorflow.contrib.data.python.framework import function
 from tensorflow.contrib.data.python.util import nest
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
+from tensorflow.python.framework import function
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import random_seed
 from tensorflow.python.framework import sparse_tensor as sparse_tensor_lib
@@ -99,8 +99,9 @@ class Iterator(object):
         shared_name=shared_name,
         output_types=nest.flatten(dataset.output_types),
         output_shapes=nest.flatten(dataset.output_shapes))
-    initializer = gen_dataset_ops.make_iterator(dataset.make_dataset_resource(),
-                                                iterator_resource)
+    with ops.colocate_with(iterator_resource):
+      initializer = gen_dataset_ops.make_iterator(
+          dataset.make_dataset_resource(), iterator_resource)
     return Iterator(iterator_resource, initializer, dataset.output_types,
                     dataset.output_shapes)
 
@@ -291,6 +292,7 @@ class Iterator(object):
           raise TypeError("Expected output shapes compatible with %r but got "
                           "dataset with output shapes %r." %
                           (self._output_shapes, dataset.output_shapes))
+    with ops.colocate_with(self._iterator_resource):
       return gen_dataset_ops.make_iterator(
           dataset.make_dataset_resource(), self._iterator_resource, name=name)
 
@@ -991,24 +993,25 @@ class Dataset(object):
     ```
 
     Important caveats:
-     - Be sure to shard before you use any randomizing operator (such as
-       shuffle).
-     - Generally it is best if the shard operator is used early in the dataset
-       pipeline. For example, when reading from a set of TFRecord files, shard
-       before converting the dataset to input samples. This avoids reading every
-       file on every worker. The following is an example of an efficient
-       sharding strategy within a complete pipeline:
 
-       ```python
-       d = Dataset.list_files(FLAGS.pattern)
-       d = d.shard(FLAGS.num_workers, FLAGS.worker_index)
-       d = d.repeat(FLAGS.num_epochs)
-       d = d.shuffle(FLAGS.shuffle_buffer_size)
-       d = d.repeat()
-       d = d.interleave(tf.contrib.data.TFRecordDataset,
-                        cycle_length=FLAGS.num_readers, block_length=1)
-       d = d.map(parser_fn, num_parallel_calls=FLAGS.num_map_threads)
-       ```
+    - Be sure to shard before you use any randomizing operator (such as
+      shuffle).
+    - Generally it is best if the shard operator is used early in the dataset
+      pipeline. For example, when reading from a set of TFRecord files, shard
+      before converting the dataset to input samples. This avoids reading every
+      file on every worker. The following is an example of an efficient
+      sharding strategy within a complete pipeline:
+
+    ```python
+    d = Dataset.list_files(FLAGS.pattern)
+    d = d.shard(FLAGS.num_workers, FLAGS.worker_index)
+    d = d.repeat(FLAGS.num_epochs)
+    d = d.shuffle(FLAGS.shuffle_buffer_size)
+    d = d.repeat()
+    d = d.interleave(tf.contrib.data.TFRecordDataset,
+                     cycle_length=FLAGS.num_readers, block_length=1)
+    d = d.map(parser_fn, num_parallel_calls=FLAGS.num_map_threads)
+    ```
 
     Args:
       num_shards: A `tf.int64` scalar `tf.Tensor`, representing the number of
@@ -1152,9 +1155,8 @@ class Dataset(object):
     return DenseToSparseBatchDataset(self, batch_size, row_shape)
 
   def group_by_window(self, key_func, reduce_func, window_size):
-    """See group_by_window()."""
-    return self.apply(
-        group_by_window, args=(key_func, reduce_func, window_size))
+    """Deprecated: Use `Dataset.apply(tf.contrib.data.group_by_window(...)`."""
+    return self.apply(group_by_window(key_func, reduce_func, window_size))
 
   def map(self,
           map_func,
@@ -1304,41 +1306,31 @@ class Dataset(object):
     """
     return FilterDataset(self, predicate)
 
-  def apply(self, fn, args=(), kwargs={}):  # pylint: disable=dangerous-default-value
-    """Apply a function to this dataset.
+  def apply(self, transformation_func):
+    """Apply a transformation function to this dataset.
 
-    `apply` enables chaining of custom `Dataset` transformations.
+    `apply` enables chaining of custom `Dataset` transformations, which are
+    represented as functions that take one `Dataset` argument and return a
+    transformed `Dataset`.
 
     For example:
 
     ```
-    dataset.map(
-        lambda x: x**2
-    ).apply(
-        group_by_window, args=(key_func, reduce_func, window_size)
-    ).map(
-        lambda x: x**3
-    )
+    dataset = (dataset.map(lambda x: x ** 2)
+               .apply(group_by_window(key_func, reduce_func, window_size))
+               .map(lambda x: x ** 3))
     ```
 
     Args:
-      fn: A function that takes a `Dataset`, `args`, and `kwargs`, and
+      transformation_func: A function that takes one `Dataset` argument and
         returns a `Dataset`.
-      args: A `tuple` or `list` of arguments to be passed to `fn`.
-      kwargs: A `dict` of keyword arguments to be passed to `fn`.
 
     Returns:
-      The `Dataset` returned by `fn`.
+      The `Dataset` returned by applying `transformation_func` to this dataset.
     """
-    if not (isinstance(args, tuple) or isinstance(args, list)):
-      raise TypeError("args must be a tuple or list.")
-    if not isinstance(kwargs, dict):
-      raise TypeError("kwargs must be a dict.")
-
-    dataset = fn(self, *args, **kwargs)
-
+    dataset = transformation_func(self)
     if not isinstance(dataset, Dataset):
-      raise TypeError("fn must return a Dataset.")
+      raise TypeError("`transformation_func` must return a Dataset.")
     return dataset
 
 
@@ -2294,7 +2286,8 @@ class TFRecordDataset(Dataset):
         bytes in the read buffer. 0 means no buffering.
     """
     super(TFRecordDataset, self).__init__()
-    self._filenames = ops.convert_to_tensor(filenames, name="filenames")
+    self._filenames = ops.convert_to_tensor(
+        filenames, dtype=dtypes.string, name="filenames")
     self._compression_type = _convert_optional_param_to_tensor(
         "compression_type",
         compression_type,
@@ -2367,22 +2360,18 @@ class FixedLengthRecordDataset(Dataset):
     return dtypes.string
 
 
-def rejection_resample(dataset,
-                       class_func,
+def rejection_resample(class_func,
                        target_dist,
                        initial_dist=None,
                        seed=None):
-  """Resamples this dataset to achieve a target class distribution.
+  """A transformation that resamples a dataset to achieve a target distribution.
 
   **NOTE** Resampling is performed via rejection sampling; some fraction
   of the input values will be dropped.
 
   Args:
-    dataset: A `Dataset` object.
-    class_func: A function mapping a nested structure of tensors (having
-      shapes and types defined by `dataset.output_shapes` and
-      `dataset.output_types`) to a scalar `tf.int32` tensor.  Values should
-      be in `[0, num_classes)`.
+    class_func: A function mapping an element of the input dataset to a scalar
+      `tf.int32` tensor. Values should be in `[0, num_classes)`.
     target_dist: A floating point type tensor, shaped `[num_classes]`.
     initial_dist: (Optional.)  A floating point type tensor, shaped
       `[num_classes]`.  If not provided, the true class distribution is
@@ -2390,58 +2379,69 @@ def rejection_resample(dataset,
     seed: (Optional.) Python integer seed for the resampler.
 
   Returns:
-    A `Dataset`.
+    A `Dataset` transformation function, which can be passed to
+    @{tf.contrib.data.Dataset.apply}.
   """
-  dist_estimation_batch_size = 32
-  target_dist = ops.convert_to_tensor(target_dist, name="initial_dist")
-  class_values_ds = dataset.map(class_func)
-  if initial_dist is not None:
-    initial_dist = ops.convert_to_tensor(initial_dist, name="initial_dist")
-    acceptance_dist = _calculate_acceptance_probs(initial_dist, target_dist)
-    initial_dist_ds = Dataset.from_tensors(initial_dist).repeat()
-    acceptance_dist_ds = Dataset.from_tensors(acceptance_dist).repeat()
-  else:
-    num_classes = (target_dist.shape[0].value or
-                   array_ops.shape(target_dist)[0])
-    smoothing_constant = 10
-    num_examples_per_class_seen = resource_variable_ops.ResourceVariable(
-        initial_value=array_ops.fill([num_classes],
-                                     np.int64(smoothing_constant)),
-        trainable=False,
-        name="class_count",
-        dtype=dtypes.int64)
+  def _apply_fn(dataset):
+    """Function from `Dataset` to `Dataset` that applies the transformation."""
+    dist_estimation_batch_size = 32
+    target_dist_t = ops.convert_to_tensor(target_dist, name="initial_dist")
+    class_values_ds = dataset.map(class_func)
+    if initial_dist is not None:
+      initial_dist_t = ops.convert_to_tensor(initial_dist, name="initial_dist")
+      acceptance_dist = _calculate_acceptance_probs(
+          initial_dist_t, target_dist_t)
+      initial_dist_ds = Dataset.from_tensors(initial_dist_t).repeat()
+      acceptance_dist_ds = Dataset.from_tensors(acceptance_dist).repeat()
+    else:
+      num_classes = (target_dist_t.shape[0].value or
+                     array_ops.shape(target_dist_t)[0])
+      smoothing_constant = 10
+      # Disable device functions and colocation constraints so that the variable
+      # will be placed with the eventual DT_VARIANT dataset tensor.
+      with ops.colocate_with(None, ignore_existing=True):
+        num_examples_per_class_seen = resource_variable_ops.ResourceVariable(
+            initial_value=array_ops.fill([num_classes],
+                                         np.int64(smoothing_constant)),
+            trainable=False,
+            collections=[ops.GraphKeys.LOCAL_VARIABLES],
+            name="local_class_count",
+            dtype=dtypes.int64)
 
-    def update_estimate_and_tile(c):
-      return array_ops.tile(
-          array_ops.expand_dims(
-              _estimate_data_distribution(c, num_examples_per_class_seen), 0),
-          [dist_estimation_batch_size, 1])
+      def update_estimate_and_tile(c):
+        return array_ops.tile(
+            array_ops.expand_dims(
+                _estimate_data_distribution(c, num_examples_per_class_seen), 0),
+            [dist_estimation_batch_size, 1])
 
-    initial_dist_ds = (class_values_ds.batch(dist_estimation_batch_size)
-                       .map(update_estimate_and_tile).unbatch())
-    acceptance_dist_ds = initial_dist_ds.map(
-        lambda initial: _calculate_acceptance_probs(initial, target_dist))
+      initial_dist_ds = (class_values_ds.batch(dist_estimation_batch_size)
+                         .map(update_estimate_and_tile).unbatch())
+      acceptance_dist_ds = initial_dist_ds.map(
+          lambda initial: _calculate_acceptance_probs(initial, target_dist_t))
 
-  def maybe_warn_on_large_rejection(accept_dist, initial_dist):
-    proportion_rejected = math_ops.reduce_sum((1 - accept_dist) * initial_dist)
-    return control_flow_ops.cond(
-        math_ops.less(proportion_rejected, .5),
-        lambda: accept_dist,
-        lambda: logging_ops.Print(  # pylint: disable=g-long-lambda
-            accept_dist, [proportion_rejected, initial_dist, accept_dist],
-            message="Proportion of examples rejected by sampler is high: ",
-            summarize=100,
-            first_n=10))
+    def maybe_warn_on_large_rejection(accept_dist, initial_dist):
+      proportion_rejected = math_ops.reduce_sum(
+          (1 - accept_dist) * initial_dist)
+      return control_flow_ops.cond(
+          math_ops.less(proportion_rejected, .5),
+          lambda: accept_dist,
+          lambda: logging_ops.Print(  # pylint: disable=g-long-lambda
+              accept_dist, [proportion_rejected, initial_dist, accept_dist],
+              message="Proportion of examples rejected by sampler is high: ",
+              summarize=100,
+              first_n=10))
 
-  acceptance_dist_ds = (Dataset.zip((acceptance_dist_ds, initial_dist_ds))
-                        .map(maybe_warn_on_large_rejection))
+    acceptance_dist_ds = (Dataset.zip((acceptance_dist_ds, initial_dist_ds))
+                          .map(maybe_warn_on_large_rejection))
 
-  current_probabilities_ds = (Dataset.zip((acceptance_dist_ds, class_values_ds))
-                              .map(array_ops.gather))
-  filtered_ds = (
-      Dataset.zip((class_values_ds, current_probabilities_ds, dataset))
-      .filter(lambda _1, p, _2: random_ops.random_uniform([], seed=seed) < p))
-  return filtered_ds.map(lambda class_value, _, data: (class_value, data))
+    current_probabilities_ds = Dataset.zip(
+        (acceptance_dist_ds, class_values_ds)).map(array_ops.gather)
+    filtered_ds = (
+        Dataset.zip((class_values_ds, current_probabilities_ds, dataset))
+        .filter(lambda _1, p, _2: random_ops.random_uniform([], seed=seed) < p))
+    return filtered_ds.map(lambda class_value, _, data: (class_value, data))
+
+  return _apply_fn
 
 
 def read_batch_features(file_pattern,
@@ -2519,7 +2519,13 @@ def read_batch_features(file_pattern,
     dataset = reader(filenames, *reader_args)
   else:
     dataset = reader(filenames)
-  dataset = dataset.repeat(num_epochs)
+  if dataset.output_types == (dtypes.string, dtypes.string):
+    dataset = dataset.map(lambda unused_k, v: v)
+  elif dataset.output_types != dtypes.string:
+    raise TypeError("`reader` must be a dataset of `tf.string` values, "
+                    "or `(tf.string, tf.string)` key-value pairs.")
+  if num_epochs != 1:
+    dataset = dataset.repeat(num_epochs)
   if randomize_input:
     dataset = dataset.shuffle(capacity)
   dataset = dataset.batch(batch_size)
@@ -2677,14 +2683,13 @@ class GroupByWindowDataset(Dataset):
         output_shapes=nest.flatten(self.output_shapes))
 
 
-def group_by_window(dataset,
-                    key_func,
+def group_by_window(key_func,
                     reduce_func,
                     window_size=None,
                     window_size_func=None):
-  """Performs a windowed "group-by" operation on this dataset.
+  """A transformation that groups windows of elements by key and reduces them.
 
-  This method maps each consecutive element in this dataset to a key
+  This transformation maps each consecutive element in a dataset to a key
   using `key_func` and groups the elements by key. It then applies
   `reduce_func` to at most `window_size_func(key)` elements matching the same
   key. All execpt the final window for each key will contain
@@ -2694,7 +2699,6 @@ def group_by_window(dataset,
   the key through `window_size_func`.
 
   Args:
-    dataset: A `Dataset`.
     key_func: A function mapping a nested structure of tensors
       (having shapes and types defined by `self.output_shapes` and
       `self.output_types`) to a scalar `tf.int64` tensor.
@@ -2710,7 +2714,8 @@ def group_by_window(dataset,
       `reduce_func`. Mutually exclusive with `window_size`.
 
   Returns:
-    A `Dataset`.
+    A `Dataset` transformation function, which can be passed to
+    @{tf.contrib.data.Dataset.apply}.
 
   Raises:
     ValueError: if neither or both of {`window_size`, `window_size_func`} are
@@ -2728,4 +2733,144 @@ def group_by_window(dataset,
     window_size_func = constant_window_func
 
   assert window_size_func is not None
-  return GroupByWindowDataset(dataset, key_func, reduce_func, window_size_func)
+
+  def _apply_fn(dataset):
+    """Function from `Dataset` to `Dataset` that applies the transformation."""
+    return GroupByWindowDataset(dataset, key_func, reduce_func,
+                                window_size_func)
+
+  return _apply_fn
+
+
+class _RestructuredDataset(Dataset):
+  """An internal helper for changing the structure and shape of a dataset."""
+
+  def __init__(self, dataset, output_types, output_shapes=None):
+    """Creates a new dataset with the given output types and shapes.
+
+    The given `dataset` must have a structure that is convertible:
+    * `dataset.output_types` must be the same as `output_types` module nesting.
+    * Each shape in `dataset.output_shapes` must be compatible with each shape
+      in `output_shapes` (if given).
+
+    Note: This helper permits "unsafe casts" for shapes, equivalent to using
+    `tf.Tensor.set_shape()` where domain-specific knowledge is available.
+
+    Args:
+      dataset: A `Dataset` object.
+      output_types: A nested structure of `tf.DType` objects.
+      output_shapes: (Optional.) A nested structure of `tf.TensorShape` objects.
+        If omitted, the shapes will be inherited from `dataset`.
+
+    Raises:
+      ValueError: If either `output_types` or `output_shapes` is not compatible
+        with the structure of `dataset`.
+    """
+    super(_RestructuredDataset, self).__init__()
+    self._dataset = dataset
+
+    # Validate that the types are compatible.
+    output_types = nest.map_structure(dtypes.as_dtype, output_types)
+    flat_original_types = nest.flatten(dataset.output_types)
+    flat_new_types = nest.flatten(output_types)
+    if flat_original_types != flat_new_types:
+      raise ValueError(
+          "Dataset with output types %r cannot be restructured to have output "
+          "types %r" % (dataset.output_types, output_types))
+
+    self._output_types = output_types
+
+    if output_shapes is None:
+      # Inherit shapes from the original `dataset`.
+      self._output_shapes = nest.pack_sequence_as(
+          output_types, nest.flatten(dataset.output_shapes))
+    else:
+      # Validate that the shapes are compatible.
+      nest.assert_same_structure(output_types, output_shapes)
+      flat_original_shapes = nest.flatten(dataset.output_shapes)
+      flat_new_shapes = nest.flatten_up_to(output_types, output_shapes)
+
+      for original_shape, new_shape in zip(flat_original_shapes,
+                                           flat_new_shapes):
+        if not original_shape.is_compatible_with(new_shape):
+          raise ValueError(
+              "Dataset with output shapes %r cannot be restructured to have "
+              "incompatible output shapes %r"
+              % (dataset.output_shapes, output_shapes))
+      self._output_shapes = nest.map_structure_up_to(
+          output_types, tensor_shape.as_shape, output_shapes)
+
+  def make_dataset_resource(self):
+    return self._dataset.make_dataset_resource()
+
+  @property
+  def output_types(self):
+    return self._output_types
+
+  @property
+  def output_shapes(self):
+    return self._output_shapes
+
+
+def batch_and_drop_remainder(batch_size):
+  """A batching transformation that omits the final small batch (if present).
+
+  Like @{tf.contrib.data.Dataset.batch}, this transformation combines
+  consecutive elements of this dataset into batches. However, if the batch
+  size does not evenly divide the input dataset size, this transformation will
+  drop the final smaller element.
+
+  The following example illustrates the difference between this
+  transformation and `Dataset.batch()`:
+
+  ```python
+  dataset = tf.contrib.data.Dataset.range(200)
+  batched = dataset.apply(tf.contrib.data.batch_and_drop_remainder(128))
+  print(batched.output_shapes)  # ==> "(128,)" (the batch dimension is known)
+  ```
+
+  By contrast, `dataset.batch(128)` would yield a two-element dataset with
+  shapes `(128,)` and `(72,)`, so the batch dimension would not be statically
+  known.
+
+  Args:
+    batch_size: A `tf.int64` scalar `tf.Tensor`, representing the number of
+        consecutive elements of this dataset to combine in a single batch.
+
+  Returns:
+    A `Dataset` transformation function, which can be passed to
+    @{tf.contrib.data.Dataset.apply}
+  """
+
+  def _apply_fn(dataset):
+    """Function from `Dataset` to `Dataset` that applies the transformation."""
+    tensor_batch_size = ops.convert_to_tensor(
+        batch_size, dtype=dtypes.int64, name="batch_size")
+
+    batched = dataset.batch(tensor_batch_size)
+    flattened = _RestructuredDataset(batched,
+                                     tuple(nest.flatten(batched.output_types)))
+
+    def _predicate(*xs):
+      """Return `True` if this element is a full batch."""
+      # Extract the dynamic batch size from the first component of the flattened
+      # batched element.
+      first_component = xs[0]
+      first_component_batch_size = array_ops.shape(
+          first_component, out_type=dtypes.int64)[0]
+
+      return math_ops.equal(first_component_batch_size, tensor_batch_size)
+
+    filtered = flattened.filter(_predicate)
+
+    maybe_constant_batch_size = tensor_util.constant_value(tensor_batch_size)
+
+    def _set_first_dimension(shape):
+      return shape.merge_with(
+          tensor_shape.vector(maybe_constant_batch_size).concatenate(shape[1:]))
+
+    known_shapes = nest.map_structure(_set_first_dimension,
+                                      batched.output_shapes)
+    return _RestructuredDataset(filtered, batched.output_types, known_shapes)
+
+  return _apply_fn

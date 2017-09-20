@@ -128,7 +128,7 @@ class FunctionTestMethods(object):
     @function.Defun(dtypes.float32, dtypes.float32)
     def APlus2B(a, b):
       print(a + b * 2)  # Create some ops to have nodes in the body
-                        # Using 'print' to make lint happy
+      # Using 'print' to make lint happy
 
     with ops.Graph().as_default():
       with self.assertRaisesRegexp(ValueError,
@@ -211,7 +211,8 @@ class FunctionTestMethods(object):
       out, = sess.run(dx, feed)
     self.assertAllClose(1 - np.square(np.tanh(inp)), out)
 
-  @test_util.disable_c_api   # Function gradients don't work with C API
+  # C API functions don't support all optimizer options on cuda yet
+  @test_util.skip_if(test_util.c_api_and_cuda_enabled)
   def testCustomGradient(self):
     dtype = dtypes.float32
 
@@ -244,7 +245,6 @@ class FunctionTestMethods(object):
         out, = sess.run(dlogits, {logits: x, labels: y})
       self.assertAllClose(out, np.exp(prob - y))
 
-  @test_util.disable_c_api   # Function gradients don't work with C API
   def testCustomGradientError(self):
     dtype = dtypes.float32
 
@@ -270,7 +270,6 @@ class FunctionTestMethods(object):
           "SymGrad expects to return 1.*but get 2.*instead"):
         _ = sess.run(dinp, {inp: x})
 
-  @test_util.disable_c_api   # Function gradients don't work with C API
   def testSymGradShape(self):
     g = ops.Graph()
     with g.as_default():
@@ -286,7 +285,9 @@ class FunctionTestMethods(object):
       self.assertEqual(x.get_shape(), dx.get_shape())
       self.assertEqual(y.get_shape(), dy.get_shape())
 
-  @test_util.disable_c_api   # Function gradients don't work with C API
+  # C API functions don't support attributes yet (i.e. noinline).
+  # This attribute is required to run sucessfully with cuda.
+  @test_util.skip_if(test_util.c_api_and_cuda_enabled)
   def testSymGradAttr(self):
 
     @function.Defun(noinline=True)
@@ -1211,6 +1212,35 @@ class FunctionOverloadTest(test.TestCase):
 
     self.assertEqual(g.as_graph_def().library.function[0].signature.description,
                      "Successor of x.")
+
+
+class FunctionCaptureByValueTest(test.TestCase):
+
+  def testCaptureByValue(self):
+    g = ops.Graph()
+    with g.as_default():
+      w = constant_op.constant([[1.0]])
+      b = constant_op.constant([2.0])
+
+      # Foo() captures w and b.
+      @function.Defun(dtypes.float32, capture_by_value=True)
+      def Foo(x):
+
+        # Plus() captures b.
+        @function.Defun(dtypes.float32, capture_by_value=True)
+        def Plus(y):
+          return y + b
+
+        self.assertEqual(0, len(Plus.captured_inputs))
+
+        return Plus(math_ops.matmul(w, x))
+
+      y = Foo(constant_op.constant([[10.]]))
+
+    self.assertEqual(0, len(Foo.captured_inputs))
+
+    with self.test_session(graph=g):
+      self.assertAllEqual(y.eval(), [[12.0]])
 
 
 class UnrollLSTMTest(test.TestCase):
