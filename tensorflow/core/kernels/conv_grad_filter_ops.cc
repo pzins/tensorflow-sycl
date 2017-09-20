@@ -95,13 +95,13 @@ typedef Eigen::SyclDevice SYCLDevice;
 #endif  // TENSORFLOW_USE_SYCL
 
 template <typename T>
-struct LaunchConv2DBackpropInputOp<CPUDevice, T> {
+struct LaunchConv2DBackpropFilterOp<CPUDevice, T> {
   void operator()(OpKernelContext* ctx, bool use_cudnn, bool cudnn_use_autotune,
                   const Tensor& out_backprop, const Tensor& input,
                   int row_stride, int col_stride, const Padding& padding,
                   Tensor* filter_backprop, TensorFormat data_format) {
     const CPUDevice& d = ctx->eigen_device<CPUDevice>();
-    functor::SpatialConvolutionBackwardInput<CPUDevice, T>()(
+    functor::SpatialConvolutionBackwardKernel<CPUDevice, T>()(
         d, filter_backprop->tensor<T, 4>(), input.tensor<T, 4>(),
         out_backprop.tensor<T, 4>(), filter_backprop->dim_size(0),
         filter_backprop->dim_size(1), row_stride, col_stride);
@@ -110,13 +110,13 @@ struct LaunchConv2DBackpropInputOp<CPUDevice, T> {
 
 #ifdef TENSORFLOW_USE_SYCL
 template <typename T>
-struct LaunchConv2DBackpropInputOp<SYCLDevice, T> {
+struct LaunchConv2DBackpropFilterOp<SYCLDevice, T> {
   void operator()(OpKernelContext* ctx, bool use_cudnn, bool cudnn_use_autotune,
                   const Tensor& out_backprop, const Tensor& input,
                   int row_stride, int col_stride, const Padding& padding,
                   Tensor* filter_backprop, TensorFormat data_format) {
     const SYCLDevice& d = ctx->eigen_device<SYCLDevice>();
-    functor::SpatialConvolutionBackwardInput<SYCLDevice, T>()(
+    functor::SpatialConvolutionBackwardKernel<SYCLDevice, T>()(
         d, filter_backprop->tensor<T, 4>(), input.tensor<T, 4>(),
         out_backprop.tensor<T, 4>(), filter_backprop->dim_size(0),
         filter_backprop->dim_size(1), row_stride, col_stride);
@@ -270,7 +270,7 @@ class Conv2DFastBackpropFilterOp : public OpKernel {
     }
 #endif
 
-    LaunchConv2DBackpropInputOp<Device, T>()(
+    LaunchConv2DBackpropFilterOp<Device, T>()(
         context, false, false, out_backprop, input, dims.spatial_dims[0].stride,
         dims.spatial_dims[1].stride, padding_, filter_backprop, data_format_);
   }
