@@ -46,8 +46,8 @@ struct FusedBatchNorm;
 template <typename Device, typename T>
 struct FusedBatchNormGrad;
 
-template <typename T>
-struct FusedBatchNorm<CPUDevice, T> {
+template <typename Device, typename T>
+struct FusedBatchNorm {
   void operator()(OpKernelContext* context, const Tensor& x_input,
                   const Tensor& scale_input, const Tensor& offset_input,
                   const Tensor& estimated_mean_input,
