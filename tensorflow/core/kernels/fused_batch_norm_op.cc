@@ -60,16 +60,15 @@ struct FusedBatchNorm {
                 errors::Internal("The CPU implementation of FusedBatchNorm "
                                  "only supports NHWC tensor format for now."));
     typename TTypes<T, 4>::ConstTensor x(x_input.tensor<T, 4>());
-    typename TTypes<T>::ConstVec scale(scale_input.vec<T>());
-    typename TTypes<T>::ConstVec offset(offset_input.vec<T>());
-    typename TTypes<T>::ConstVec estimated_mean(estimated_mean_input.vec<T>());
-    typename TTypes<T>::ConstVec estimated_variance(
-        estimated_variance_input.vec<T>());
+    auto scale = scale_input.flat<T>();
+    auto offset = offset_input.flat<T>();
+    auto estimated_mean = estimated_mean_input.flat<T>();
+    auto estimated_variance = estimated_variance_input.flat<T>();
     typename TTypes<T, 4>::Tensor y(y_output->tensor<T, 4>());
-    typename TTypes<T>::Vec batch_mean(batch_mean_output->vec<T>());
-    typename TTypes<T>::Vec batch_var(batch_var_output->vec<T>());
-    typename TTypes<T>::Vec saved_mean(saved_mean_output->vec<T>());
-    typename TTypes<T>::Vec saved_var(saved_var_output->vec<T>());
+    auto batch_mean = batch_mean_output->flat<T>();
+    auto batch_var = batch_var_output->flat<T>();
+    auto saved_mean = saved_mean_output->flat<T>();
+    auto saved_var = saved_var_output->flat<T>();
 
     const Device& d = context->eigen_device<Device>();
 
@@ -92,9 +91,8 @@ struct FusedBatchNorm {
 
     auto x_rest_by_depth = x.reshape(rest_by_depth);
     const int rest_size_minus_one = (rest_size > 1) ? (rest_size - 1) : 1;
-    T rest_size_inv = static_cast<T>(1.0f / static_cast<T>(rest_size));
     // This adjustment is for Bessel's correction
-    T rest_size_adjust =
+    const T rest_size_adjust =
         static_cast<T>(rest_size) / static_cast<T>(rest_size_minus_one);
 
 #ifdef TENSORFLOW_USE_SYCL
@@ -117,22 +115,22 @@ struct FusedBatchNorm {
 #endif  // TENSORFLOW_USE_SYCL
 
     if (is_training) {
-      mean.device(d) = (x_rest_by_depth.sum(reduce_dims) * rest_size_inv);
-      batch_mean.device(d) = mean;
-      saved_mean.device(d) = mean;
+      mean.device(d) = x_rest_by_depth.mean(reduce_dims);
+      d.memcpy(batch_mean.data(), mean.data(), mean.size() * sizeof(T));
+      d.memcpy(saved_mean.data(), mean.data(), mean.size() * sizeof(T));
     } else {
-      mean.device(d) = estimated_mean;
+      d.memcpy(mean.data(), estimated_mean.data(), estimated_mean.size() * sizeof(T));
     }
 
     auto x_centered =
-        x_rest_by_depth - mean.reshape(one_by_depth).broadcast(bcast_spec);
+        (x_rest_by_depth - mean.reshape(one_by_depth).broadcast(bcast_spec)).eval();
 
     if (is_training) {
-      variance.device(d) = x_centered.square().sum(reduce_dims) * rest_size_inv;
+      variance.device(d) = x_centered.square().mean(reduce_dims);
       batch_var.device(d) = variance * rest_size_adjust;
-      saved_var.device(d) = variance;
+      d.memcpy(saved_var.data(), variance.data(), variance.size() * sizeof(T));
     } else {
-      variance.device(d) = estimated_variance;
+      d.memcpy(variance.data(), estimated_variance.data(), estimated_variance.size() * sizeof(T));
     }
 
     auto scaling_factor = ((variance + epsilon).rsqrt() * scale)
@@ -161,12 +159,12 @@ struct FusedBatchNormGrad {
     typename TTypes<T, 4>::ConstTensor y_backprop(
         y_backprop_input.tensor<T, 4>());
     typename TTypes<T, 4>::ConstTensor x(x_input.tensor<T, 4>());
-    typename TTypes<T>::ConstVec scale(scale_input.vec<T>());
-    typename TTypes<T>::ConstVec mean(mean_input.vec<T>());
-    typename TTypes<T>::ConstVec variance(variance_input.vec<T>());
+    auto scale = scale_input.flat<T>();
+    auto mean = mean_input.flat<T>();
+    auto variance = variance_input.flat<T>();
     typename TTypes<T, 4>::Tensor x_backprop(x_backprop_output->tensor<T, 4>());
-    typename TTypes<T>::Vec scale_backprop(scale_backprop_output->vec<T>());
-    typename TTypes<T>::Vec offset_backprop(offset_backprop_output->vec<T>());
+    auto scale_backprop = scale_backprop_output->flat<T>();
+    auto offset_backprop = offset_backprop_output->flat<T>();
 
     // Note: the following formulas are used to compute the gradients for
     // back propagation.
@@ -196,17 +194,17 @@ struct FusedBatchNormGrad {
 #endif
 
     auto x_rest_by_depth = x.reshape(rest_by_depth);
-    T rest_size_inv = static_cast<T>(1.0f / static_cast<T>(rest_size));
+    const T rest_size_inv = static_cast<T>(1.0f / static_cast<T>(rest_size));
 
-    auto x_mean_rest_by_depth =
-        mean.reshape(one_by_depth).broadcast(bcast_spec);
-    auto x_centered = (x_rest_by_depth - x_mean_rest_by_depth).eval();
+    auto x_centered =
+        (x_rest_by_depth - mean.reshape(one_by_depth).broadcast(bcast_spec)).eval();
+
     auto coef0 = (variance + epsilon).rsqrt();
     auto coef0_rest_by_depth =
-        coef0.eval().reshape(one_by_depth).broadcast(bcast_spec);
-    auto x_scaled = x_centered * coef0_rest_by_depth;
+        coef0.reshape(one_by_depth).broadcast(bcast_spec);
+    auto x_scaled = (x_centered * coef0_rest_by_depth).eval();
 
-    auto y_backprop_rest_by_depth = y_backprop.eval().reshape(rest_by_depth);
+    auto y_backprop_rest_by_depth = y_backprop.reshape(rest_by_depth);
     scale_backprop.device(d) =
         (y_backprop_rest_by_depth * x_scaled).sum(reduce_dims);
     auto y_backprop_sum = y_backprop_rest_by_depth.sum(reduce_dims);
