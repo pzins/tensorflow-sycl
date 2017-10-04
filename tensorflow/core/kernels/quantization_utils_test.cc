@@ -744,7 +744,7 @@ void TestDivide64x2Pow(int64 val, int64 ref) {
   const int64x2_t val_64x2 = vmovq_n_s64(val);
   const int64x2_t ret = Divide64x2Pow<POW>(val_64x2);
   int64 rets[2];
-  vst1q_s64(rets, ret);
+  vst1q_s64(reinterpret_cast<int64_t *>(rets), ret);
   EXPECT_EQ(rets[0], ref);
   EXPECT_EQ(rets[1], ref);
   VLOG(1) << "div: val " << val << ", " << ref;
@@ -755,8 +755,8 @@ void TestDivide64x2PowRound(int64 val, int64 ref) {
   const int64x2_t val_64x2 = vmovq_n_s64(val);
   const int64x2_t shifted = Divide64x2PowRound<POW>(val_64x2);
   int64 rets[2];
-  vst1q_s64(rets, shifted);
-  EXPECT_EQ(rets[0], ref) << "in = " << val << ", " << POW
+  vst1q_s64(reinterpret_cast<int64_t *>(rets), shifted);
+	EXPECT_EQ(rets[0], ref) << "in = " << val << ", " << POW
                           << ", act = " << rets[0] << ", ref = " << ref;
   EXPECT_EQ(rets[1], ref);
   VLOG(1) << "div round: " << val << ", " << rets[0];
