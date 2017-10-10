@@ -50,6 +50,10 @@ limitations under the License.
 #include "tensorflow/core/platform/stream_executor.h"
 #endif  // GOOGLE_CUDA
 
+#ifdef TENSORFLOW_USE_SYCL
+#include "tensorflow/core/kernels/conv_ops_sycl.h"
+#endif  // TENSORFLOW_USE_SYCL
+
 namespace tensorflow {
 
 typedef Eigen::ThreadPoolDevice CPUDevice;
@@ -57,7 +61,7 @@ typedef Eigen::GpuDevice GPUDevice;
 
 #ifdef TENSORFLOW_USE_SYCL
 typedef Eigen::SyclDevice SYCLDevice;
-#endif // TENSORFLOW_USE_SYCL
+#endif  // TENSORFLOW_USE_SYCL
 
 namespace {
 template <typename Device, typename T>
@@ -129,25 +133,6 @@ struct LaunchConv2DOp<CPUDevice, T> {
                                   padding, output, data_format);
   }
 };
-
-#ifdef TENSORFLOW_USE_SYCL
-template <typename T>
-struct LaunchConv2DOp<SYCLDevice, T> {
-  void operator()(OpKernelContext* ctx, bool use_cudnn, bool cudnn_use_autotune,
-                  const Tensor& input, const Tensor& filter, int row_stride,
-                  int col_stride, const Padding& padding, Tensor* output,
-                  TensorFormat data_format) {
-    if (data_format != FORMAT_NHWC) {
-      ctx->SetStatus(
-          errors::Unimplemented("Generic conv implementation only supports "
-                                "NHWC tensor format for now."));
-      return;
-    }
-    LaunchGeneric<SYCLDevice, T>()(ctx, input, filter, row_stride, col_stride,
-                                  padding, output, data_format);
-  }
-};
-#endif  // TENSORFLOW_USE_SYCL
 
 template <typename Device, typename T>
 class LaunchDeepConvOp {
@@ -685,38 +670,33 @@ void LaunchConv2DOp<GPUDevice, T>::operator()(
   AlgorithmConfig algorithm_config;
   if (cudnn_use_autotune &&
       !AutoTuneConv::GetInstance()->Find(conv_parameters, &algorithm_config)) {
-    std::vector<AlgorithmDesc::Index> algorithms;
+    std::vector<AlgorithmDesc> algorithms;
     CHECK(stream->parent()->GetConvolveAlgorithms(
         conv_parameters.ShouldIncludeWinogradNonfusedAlgo<T>(), &algorithms));
     ProfileResult best_result;
     ProfileResult best_result_no_scratch;
-    // TODO(benbarsdell): Ideally this should not attempt using tensor op math
-    // if it's not enabled.
-    for (bool use_tensor_ops : {false, true}) {
-      for (auto algo_index : algorithms) {
-        // TODO(zhengxq): profile each algorithm multiple times to better
-        // accuracy.
-        AlgorithmDesc profile_algorithm(algo_index, use_tensor_ops);
-        CudnnScratchAllocator scratch_allocator(ConvolveScratchSize, ctx);
-        ProfileResult profile_result;
-        bool cudnn_launch_status =
-            stream
-                ->ThenConvolveWithAlgorithm(
-                    input_desc, input_ptr, filter_desc, filter_ptr, conv_desc,
-                    output_desc, &output_ptr, &scratch_allocator,
-                    AlgorithmConfig(profile_algorithm), &profile_result)
-                .ok();
-        if (cudnn_launch_status) {
-          if (profile_result.is_valid()) {
-            if (profile_result.elapsed_time_in_ms() <
-                best_result.elapsed_time_in_ms()) {
-              best_result = profile_result;
-            }
-            if (scratch_allocator.TotalByteSize() == 0 &&
-                profile_result.elapsed_time_in_ms() <
-                    best_result_no_scratch.elapsed_time_in_ms()) {
-              best_result_no_scratch = profile_result;
-            }
+    for (auto profile_algorithm : algorithms) {
+      // TODO(zhengxq): profile each algorithm multiple times to better
+      // accuracy.
+      CudnnScratchAllocator scratch_allocator(ConvolveScratchSize, ctx);
+      ProfileResult profile_result;
+      bool cudnn_launch_status =
+          stream
+              ->ThenConvolveWithAlgorithm(
+                  input_desc, input_ptr, filter_desc, filter_ptr, conv_desc,
+                  output_desc, &output_ptr, &scratch_allocator,
+                  AlgorithmConfig(profile_algorithm), &profile_result)
+              .ok();
+      if (cudnn_launch_status) {
+        if (profile_result.is_valid()) {
+          if (profile_result.elapsed_time_in_ms() <
+              best_result.elapsed_time_in_ms()) {
+            best_result = profile_result;
+          }
+          if (scratch_allocator.TotalByteSize() == 0 &&
+              profile_result.elapsed_time_in_ms() <
+                  best_result_no_scratch.elapsed_time_in_ms()) {
+            best_result_no_scratch = profile_result;
           }
         }
       }
@@ -811,9 +791,12 @@ template class LaunchConv2DOp<GPUDevice, float>;
 #endif  // GOOGLE_CUDA
 
 #ifdef TENSORFLOW_USE_SYCL
-REGISTER_KERNEL_BUILDER(
-    Name("Conv2D").Device(DEVICE_SYCL).TypeConstraint<float>("T"),
-    Conv2DOp<SYCLDevice, float>);
-#endif // TENSORFLOW_USE_SYCL
+#define REGISTER_SYCL_KERNELS(T)                                     \
+  REGISTER_KERNEL_BUILDER(                                           \
+      Name("Conv2D").Device(DEVICE_SYCL).TypeConstraint<T>("T"), \
+      Conv2DOp<SYCLDevice, T>);
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL_KERNELS)
+#undef REGISTER_SYCL_KERNELS
+#endif  // TENSORFLOW_USE_SYCL
 
 }  // namespace tensorflow

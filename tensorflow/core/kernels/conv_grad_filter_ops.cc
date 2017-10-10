@@ -48,6 +48,10 @@ limitations under the License.
 #include "tensorflow/core/platform/stream_executor.h"
 #endif  // GOOGLE_CUDA
 
+#ifdef TENSORFLOW_USE_SYCL
+#include "tensorflow/core/kernels/conv_ops_sycl.h"
+#endif  // TENSORFLOW_USE_SYCL
+
 namespace {
 
 // Returns in 'col_data', image patches in storage order (height, width, depth)
@@ -107,22 +111,6 @@ struct LaunchConv2DBackpropFilterOp<CPUDevice, T> {
         filter_backprop->dim_size(1), row_stride, col_stride);
   }
 };
-
-#ifdef TENSORFLOW_USE_SYCL
-template <typename T>
-struct LaunchConv2DBackpropFilterOp<SYCLDevice, T> {
-  void operator()(OpKernelContext* ctx, bool use_cudnn, bool cudnn_use_autotune,
-                  const Tensor& out_backprop, const Tensor& input,
-                  int row_stride, int col_stride, const Padding& padding,
-                  Tensor* filter_backprop, TensorFormat data_format) {
-    const SYCLDevice& d = ctx->eigen_device<SYCLDevice>();
-    functor::SpatialConvolutionBackwardKernel<SYCLDevice, T>()(
-        d, filter_backprop->tensor<T, 4>(), input.tensor<T, 4>(),
-        out_backprop.tensor<T, 4>(), filter_backprop->dim_size(0),
-        filter_backprop->dim_size(1), row_stride, col_stride);
-  }
-};
-#endif  // TENSORFLOW_USE_SYCL
 
 #ifdef TENSORFLOW_USE_LIBXSMM
 template <typename Device, class T>
@@ -835,40 +823,35 @@ void LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T>::operator()(
   AlgorithmConfig algorithm_config;
   if (cudnn_use_autotune && !AutoTuneConvBwdFilter::GetInstance()->Find(
                                 conv_parameters, &algorithm_config)) {
-    std::vector<AlgorithmDesc::Index> algorithms;
+    std::vector<AlgorithmDesc> algorithms;
     CHECK(stream->parent()->GetConvolveBackwardFilterAlgorithms(
         conv_parameters.ShouldIncludeWinogradNonfusedAlgo<T>(), &algorithms));
     ProfileResult best_result;
     ProfileResult best_result_no_scratch;
-    // TODO(benbarsdell): Ideally this should not attempt using tensor op math
-    // if it's not enabled.
-    for (bool use_tensor_ops : {false, true}) {
-      for (auto algo_index : algorithms) {
-        // TODO(zhengxq): profile each algorithm multiple times to better
-        // accuracy.
-        AlgorithmDesc profile_algorithm(algo_index, use_tensor_ops);
-        CudnnScratchAllocator scratch_allocator(
-            ConvolveBackwardFilterScratchSize, ctx);
-        ProfileResult profile_result;
-        bool cudnn_launch_status =
-            stream
-                ->ThenConvolveBackwardFilterWithAlgorithm(
-                    input_desc, input_ptr, output_desc, out_backprop_ptr,
-                    conv_desc, filter_desc, &filter_backprop_ptr,
-                    &scratch_allocator, AlgorithmConfig(profile_algorithm),
-                    &profile_result)
-                .ok();
-        if (cudnn_launch_status) {
-          if (profile_result.is_valid()) {
-            if (profile_result.elapsed_time_in_ms() <
-                best_result.elapsed_time_in_ms()) {
-              best_result = profile_result;
-            }
-            if (scratch_allocator.TotalByteSize() == 0 &&
-                profile_result.elapsed_time_in_ms() <
-                    best_result_no_scratch.elapsed_time_in_ms()) {
-              best_result_no_scratch = profile_result;
-            }
+    for (auto profile_algorithm : algorithms) {
+      // TODO(zhengxq): profile each algorithm multiple times to better
+      // accuracy.
+      CudnnScratchAllocator scratch_allocator(ConvolveBackwardFilterScratchSize,
+                                              ctx);
+      ProfileResult profile_result;
+      bool cudnn_launch_status =
+          stream
+              ->ThenConvolveBackwardFilterWithAlgorithm(
+                  input_desc, input_ptr, output_desc, out_backprop_ptr,
+                  conv_desc, filter_desc, &filter_backprop_ptr,
+                  &scratch_allocator, AlgorithmConfig(profile_algorithm),
+                  &profile_result)
+              .ok();
+      if (cudnn_launch_status) {
+        if (profile_result.is_valid()) {
+          if (profile_result.elapsed_time_in_ms() <
+              best_result.elapsed_time_in_ms()) {
+            best_result = profile_result;
+          }
+          if (scratch_allocator.TotalByteSize() == 0 &&
+              profile_result.elapsed_time_in_ms() <
+                  best_result_no_scratch.elapsed_time_in_ms()) {
+            best_result_no_scratch = profile_result;
           }
         }
       }
@@ -972,8 +955,7 @@ REGISTER_KERNEL_BUILDER(Name("Conv2DBackpropFilter")
                               .TypeConstraint<T>("T")      \
                               .HostMemory("filter_sizes"), \
                           Conv2DFastBackpropFilterOp<SYCLDevice, T>);
-
-REGISTER_SYCL_KERNELS(float);
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL_KERNELS);
 #undef REGISTER_SYCL_KERNELS
 #endif  // TENSORFLOW_USE_SYCL
 
