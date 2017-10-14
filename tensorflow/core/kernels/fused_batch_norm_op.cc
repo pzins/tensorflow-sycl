@@ -122,7 +122,7 @@ struct FusedBatchNorm {
 #endif  // TENSORFLOW_USE_SYCL
 
     if (is_training) {
-      mean.device(d) = (x_rest_by_depth.mean(reduce_dims);
+      mean.device(d) = x_rest_by_depth.mean(reduce_dims);
       d.memcpy(batch_mean.data(), mean.data(), mean.size() * sizeof(T));
       d.memcpy(saved_mean.data(), mean.data(), mean.size() * sizeof(T));
     } else {
