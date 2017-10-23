@@ -805,10 +805,11 @@ template class LaunchConv2DOp<GPUDevice, float>;
 
 #endif  // GOOGLE_CUDA
 
+#if !defined(USE_GEMM_FOR_CONV)
 #ifdef TENSORFLOW_USE_SYCL
 REGISTER_KERNEL_BUILDER(
     Name("Conv2D").Device(DEVICE_SYCL).TypeConstraint<float>("T"),
     Conv2DOp<SYCLDevice, float>);
-#endif // TENSORFLOW_USE_SYCL
-
+#endif  // TENSORFLOW_USE_SYCL
+#endif  // !defined(USE_GEMM_FOR_CONV)
 }  // namespace tensorflow
