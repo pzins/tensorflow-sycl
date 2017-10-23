@@ -538,12 +538,19 @@ class Im2ColConvFunctor<SYCLDevice, T1, T2, T3, TGemmFunctor> {
     const int64 chunk_value_count =
         (kMaxChunkSize + (sizeof(T1) - 1)) / sizeof(T1);
 
-    Tensor im2col_buffer_resource;
-    OP_REQUIRES_OK(context, context->allocate_temp(
-                                DataTypeToEnum<T1>::value,
-                                TensorShape({chunk_value_count}),
-                                &im2col_buffer_resource));
-    T1* im2col_buffer = static_cast<T1*>(im2col_buffer_resource.flat<T1>().data());
+    Im2ColBufferResourceSYCL<SYCLDevice, T1, chunk_value_count>* im2col_buffer_resource;
+    std::function<Status(Im2ColBufferResourceSYCL<SYCLDevice, T1, chunk_value_count>**)>
+        creator = [&](Im2ColBufferResourceSYCL<SYCLDevice, T1, chunk_value_count>** resource) {
+          *resource = new Im2ColBufferResourceSYCL<SYCLDevice, T1, chunk_value_count>(device);
+          return Status::OK();
+        };
+    OP_REQUIRES_OK(context, context->resource_manager()->LookupOrCreate(
+                                "Conv2d", "im2col_buffer",
+                                &im2col_buffer_resource, creator));
+
+    mutex_lock lock_buffer(im2col_buffer_resource->mu);
+    core::ScopedUnref unref_buffer(im2col_buffer_resource);
+    T1* im2col_buffer = im2col_buffer_resource->data;
 
     const int64 patch_count = (input_batches * output_height * output_width);
     const int64 chunk_count =
