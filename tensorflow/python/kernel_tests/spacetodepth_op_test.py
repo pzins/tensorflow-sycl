@@ -38,7 +38,7 @@ class SpaceToDepthTest(test.TestCase):
       # test NHWC (default) on CPU
       x_tf = array_ops.space_to_depth(input_nhwc, block_size)
       self.assertAllEqual(x_tf.eval(), outputs)
-    if test.is_gpu_available():
+    if test.is_gpu_available(cuda_only=True):
       with self.test_session(use_gpu=True):
         # test NHWC (default) on GPU
         x_tf = array_ops.space_to_depth(input_nhwc, block_size)
@@ -259,6 +259,10 @@ class SpaceToDepthTest(test.TestCase):
   def testAgainstTranspose(self):
     self.compareToTranspose("NHWC", False)
     self.compareToTranspose("NHWC", True)
+    if not test.is_gpu_available(cuda_only=True):
+        return
+
+    # "NCHW" format is only supported on CUDA.
     self.compareToTranspose("NCHW", True)
 
 
