@@ -240,6 +240,11 @@ class Conv2DFastBackpropFilterOp : public OpKernel {
     OP_REQUIRES_OK(context,
                    context->allocate_output(0, filter_shape, &filter_backprop));
 
+    // If there is nothing to compute, return.
+    if (filter_shape.num_elements() == 0) {
+      return;
+    }
+
 #if defined TENSORFLOW_USE_LIBXSMM && defined TENSORFLOW_USE_LIBXSMM_BACKWARD
     int64 pad_top, pad_bottom;
     int64 pad_left, pad_right;
@@ -331,6 +336,11 @@ class Conv2DCustomBackpropFilterOp : public OpKernel {
     Tensor* filter_backprop;
     OP_REQUIRES_OK(context,
                    context->allocate_output(0, filter_shape, &filter_backprop));
+
+    // If there is nothing to compute, return.
+    if (filter_shape.num_elements() == 0) {
+      return;
+    }
 
     int64 pad_top, pad_bottom;
     int64 pad_left, pad_right;
@@ -545,6 +555,11 @@ class Conv2DSlowBackpropFilterOp : public OpKernel {
     Tensor* filter_backprop = nullptr;
     OP_REQUIRES_OK(context,
                    context->allocate_output(0, filter_shape, &filter_backprop));
+
+    // If there is nothing to compute, return.
+    if (filter_shape.num_elements() == 0) {
+      return;
+    }
 
     // For now we take the stride from the second and third dimensions only (we
     // do not support striding on the batch or depth dimension).
