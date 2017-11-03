@@ -164,7 +164,7 @@ struct GatherFunctor<CPUDevice, T, Index> {
 #ifdef TENSORFLOW_USE_SYCL
 template <typename T, typename Index, typename SliceIndex,
           SliceIndex static_slice_elems>
-SliceIndex HandleCopiesSYCL(const SYCLDevice& d,
+SliceIndex HandleCopiesSYCL(OpKernelContext* ctx,
                             typename TTypes<T, 3>::ConstTensor params,
                             typename TTypes<Index>::ConstFlat indices,
                             SliceIndex slice_elems,
@@ -177,14 +177,14 @@ SliceIndex HandleCopiesSYCL(const SYCLDevice& d,
     // was a security risk since it could have changed in between.
     const Index index = internal::SubtleMustCopy(indices(i));
     if (!FastBoundsCheck(index, limit)) return i;
-    out.template chip<1>(i).device(d) = params.template chip<1>(index);
+    out.template chip<1>(i).device(ctx->eigen_sycl_device()) = params.template chip<1>(index);
   }
   return -1;
 }
 
 template <typename T, typename Index>
 struct GatherFunctorSYCL {
-  int64 operator()(const SYCLDevice& d,
+  int64 operator()(OpKernelContext* ctx,
                    typename TTypes<T, 3>::ConstTensor params,
                    typename TTypes<Index>::ConstFlat indices,
                    typename TTypes<T, 3>::Tensor out) {
@@ -195,16 +195,16 @@ struct GatherFunctorSYCL {
     bool use_large = (slice_size > std::numeric_limits<int32>::max() ||
                       params.size() > std::numeric_limits<int32>::max() ||
                       N > std::numeric_limits<int32>::max());
-#define CALL(elems)                                                        \
-  do {                                                                     \
-    if (use_large) {                                                       \
-      bad_i = HandleCopiesSYCL<T, Index, int64, elems>(d, params, indices, \
-                                                       slice_size, out);   \
-    } else {                                                               \
-      const int32 small_slice = static_cast<int32>(slice_size);            \
-      bad_i = HandleCopiesSYCL<T, Index, int32, elems>(d, params, indices, \
-                                                       small_slice, out);  \
-    }                                                                      \
+#define CALL(elems)                                                         \
+  do {                                                                      \
+    if (use_large) {                                                        \
+      bad_i = HandleCopiesSYCL<T, Index, int64, elems>(ctx, params, indices,\
+                                                       slice_size, out);    \
+    } else {                                                                \
+      const int32 small_slice = static_cast<int32>(slice_size);             \
+      bad_i = HandleCopiesSYCL<T, Index, int32, elems>(ctx, params, indices,\
+                                                       small_slice, out);   \
+    }                                                                       \
   } while (0)
 
     if (slice_size == 10)
@@ -222,11 +222,11 @@ struct GatherFunctorSYCL {
 // Stripped down version of CPU functor which uses Eigen loops to copy slices
 template <typename T, typename Index>
 struct GatherFunctor<SYCLDevice, T, Index> {
-  int64 operator()(const SYCLDevice& d,
+  int64 operator()(OpKernelContext* ctx,
                    typename TTypes<T, 3>::ConstTensor params,
                    typename TTypes<Index>::ConstFlat indices,
                    typename TTypes<T, 3>::Tensor out) {
-    return GatherFunctorSYCL<T, Index>()(d, params, indices, out);
+    return GatherFunctorSYCL<T, Index>()(ctx, params, indices, out);
   }
 };
 #endif  // TENSORFLOW_USE_SYCL

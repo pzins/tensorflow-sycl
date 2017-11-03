@@ -46,11 +46,8 @@ REGISTER_KERNEL_BUILDER(Name("AddV2")
 
 
 #if TENSORFLOW_USE_SYCL
-#define REGISTER_KERNEL(type)                          \
-  REGISTER(BinaryOp, SYCL, "Add", functor::add, type); \
-  REEGISTER(BinaryOp, SYCL, "AddV2", functor::add, type);
-
-TF_CALL_SYCL_NUMBER_TYPES(REGISTER_KERNEL);
+REGISTER2(BinaryOp, SYCL, "Add", functor::add, float, double);
+REGISTER2(BinaryOp, SYCL, "AddV2", functor::add, float, double);
 
 REGISTER_KERNEL_BUILDER(Name("Add")
                             .Device(DEVICE_SYCL)
