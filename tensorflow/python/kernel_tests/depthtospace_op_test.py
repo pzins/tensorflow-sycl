@@ -322,11 +322,21 @@ class DepthToSpaceGradientTest(test.TestCase):
   def testSmall(self):
     block_size = 2
     self._compare(3, 2, 5, 3, block_size, "NHWC")
+
+    if not test.is_gpu_available(cuda_only=True):
+      tf_logging.info("skipping gpu tests since gpu not available")
+      return
+
     self._compare(3, 2, 5, 3, block_size, "NCHW")
 
   def testSmall2(self):
     block_size = 3
     self._compare(1, 2, 3, 2, block_size, "NHWC")
+
+    if not test.is_gpu_available(cuda_only=True):
+      tf_logging.info("skipping gpu tests since gpu not available")
+      return
+
     self._compare(1, 2, 3, 2, block_size, "NCHW")
 
 
