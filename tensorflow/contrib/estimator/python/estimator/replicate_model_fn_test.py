@@ -831,8 +831,9 @@ class GetLocalDevicesTest(test_util.TensorFlowTestCase):
         replicate_model_fn._get_local_devices('XPU'))  # XPU doesn't exist.
 
   def test_whether_there_is_a_gpu(self):
+    gpu_type = test_util.gpu_device_type()
     self.assertEqual(
-        len(replicate_model_fn._get_local_devices('GPU')),
+        len(replicate_model_fn._get_local_devices(gpu_type)),
         test.is_gpu_available())
 
 
