@@ -22,6 +22,7 @@ import numpy as np
 
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
+from tensorflow.python.framework import test_util
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import gradient_checker
 from tensorflow.python.ops import gradients_impl
@@ -29,6 +30,7 @@ from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import nn_grad
 from tensorflow.python.ops import nn_impl
 from tensorflow.python.platform import test
+from tensorflow.python.platform import tf_logging
 
 
 class BatchNormalizationTest(test.TestCase):
@@ -334,8 +336,13 @@ class BatchNormalizationTest(test.TestCase):
     self.assertLess(err_grad_scale, err_tolerance)
 
   def testInference(self):
+    dtypes = [np.float32]
+    #TODO: {liwanski} SYCL has no support for float16 yet
+    if not "SYCL" in test_util.gpu_device_name():
+      dtypes += [np.float16]
+
     x_shape = [1, 1, 6, 1]
-    for dtype in [np.float16, np.float32]:
+    for dtype in dtypes:
       if test.is_gpu_available(cuda_only=True):
         self._test_inference(
             x_shape, dtype, [1], np.float32, use_gpu=True, data_format='NHWC')
@@ -346,7 +353,7 @@ class BatchNormalizationTest(test.TestCase):
 
     x_shape = [1, 1, 6, 2]
     if test.is_gpu_available(cuda_only=True):
-      for dtype in [np.float16, np.float32]:
+      for dtype in dtypes:
         self._test_inference(
             x_shape, dtype, [2], np.float32, use_gpu=True, data_format='NHWC')
         self._test_inference(
@@ -354,12 +361,12 @@ class BatchNormalizationTest(test.TestCase):
 
     x_shape = [1, 2, 1, 6]
     if test.is_gpu_available(cuda_only=True):
-      for dtype in [np.float16, np.float32]:
+      for dtype in dtypes:
         self._test_inference(
             x_shape, dtype, [2], np.float32, use_gpu=True, data_format='NCHW')
 
     x_shape = [27, 131, 127, 6]
-    for dtype in [np.float16, np.float32]:
+    for dtype in dtypes:
       if test.is_gpu_available(cuda_only=True):
         self._test_inference(
             x_shape, dtype, [131], np.float32, use_gpu=True, data_format='NCHW')
@@ -369,8 +376,13 @@ class BatchNormalizationTest(test.TestCase):
           x_shape, dtype, [6], np.float32, use_gpu=False, data_format='NHWC')
 
   def testTraining(self):
+    dtypes = [np.float32]
+    #TODO: {liwanski} SYCL has no support for float16 yet
+    if not "SYCL" in test_util.gpu_device_name():
+      dtypes += [np.float16]
+
     x_shape = [1, 1, 6, 1]
-    for dtype in [np.float16, np.float32]:
+    for dtype in dtypes:
       if test.is_gpu_available(cuda_only=True):
         self._test_training(
             x_shape, dtype, [1], np.float32, use_gpu=True, data_format='NHWC')
@@ -380,7 +392,7 @@ class BatchNormalizationTest(test.TestCase):
           x_shape, dtype, [1], np.float32, use_gpu=False, data_format='NHWC')
 
     x_shape = [1, 1, 6, 2]
-    for dtype in [np.float16, np.float32]:
+    for dtype in dtypes:
       if test.is_gpu_available(cuda_only=True):
         self._test_training(
             x_shape, dtype, [2], np.float32, use_gpu=True, data_format='NHWC')
@@ -389,12 +401,12 @@ class BatchNormalizationTest(test.TestCase):
 
     x_shape = [1, 2, 1, 6]
     if test.is_gpu_available(cuda_only=True):
-      for dtype in [np.float16, np.float32]:
+      for dtype in dtypes:
         self._test_training(
             x_shape, dtype, [2], np.float32, use_gpu=True, data_format='NCHW')
 
     x_shape = [27, 131, 127, 6]
-    for dtype in [np.float16, np.float32]:
+    for dtype in dtypes:
       if test.is_gpu_available(cuda_only=True):
         self._test_training(
             x_shape, dtype, [131], np.float32, use_gpu=True, data_format='NCHW')
@@ -404,9 +416,17 @@ class BatchNormalizationTest(test.TestCase):
           x_shape, dtype, [6], np.float32, use_gpu=False, data_format='NHWC')
 
   def testBatchNormGrad(self):
+    dtypes = [np.float32]
+    #TODO: {liwanski} SYCL has no support for float16 yet
+    if not "SYCL" in test_util.gpu_device_name():
+      dtypes += [np.float16]
+
+    if not test.is_gpu_available(cuda_only=True):
+      tf_logging.info("skipping gpu tests since gpu not available")
+      return
     for is_training in [True, False]:
       x_shape = [1, 1, 6, 1]
-      for dtype in [np.float16, np.float32]:
+      for dtype in dtypes:
         if test.is_gpu_available(cuda_only=True):
           self._test_gradient(
               x_shape,
@@ -431,7 +451,7 @@ class BatchNormalizationTest(test.TestCase):
             is_training=is_training)
 
       x_shape = [1, 1, 6, 2]
-      for dtype in [np.float16, np.float32]:
+      for dtype in dtypes:
         if test.is_gpu_available(cuda_only=True):
           self._test_gradient(
               x_shape,
@@ -450,7 +470,7 @@ class BatchNormalizationTest(test.TestCase):
 
       x_shape = [1, 2, 1, 6]
       if test.is_gpu_available(cuda_only=True):
-        for dtype in [np.float16, np.float32]:
+        for dtype in dtypes:
           self._test_gradient(
               x_shape,
               dtype, [2],
@@ -460,7 +480,7 @@ class BatchNormalizationTest(test.TestCase):
               is_training=is_training)
 
       x_shape = [5, 7, 11, 4]
-      for dtype in [np.float16, np.float32]:
+      for dtype in dtypes:
         if test.is_gpu_available(cuda_only=True):
           self._test_gradient(
               x_shape,
@@ -524,15 +544,20 @@ class BatchNormalizationTest(test.TestCase):
         'shape': [2, 3, 2, 2],
         'err_tolerance': 1e-3,
         'dtype': np.float32,
-    }, {
-        'shape': [2, 3, 4, 5],
-        'err_tolerance': 1e-2,
-        'dtype': np.float16,
-    }, {
-        'shape': [2, 3, 2, 2],
-        'err_tolerance': 2e-3,
-        'dtype': np.float16,
     }]
+
+    #TODO: {liwanski} SYCL has no support for float16 yet
+    if not "SYCL" in test_util.gpu_device_name():
+      configs += [{
+          'shape': [2, 3, 4, 5],
+          'err_tolerance': 1e-2,
+          'dtype': np.float16,
+      }, {
+          'shape': [2, 3, 2, 2],
+          'err_tolerance': 2e-3,
+          'dtype': np.float16,
+      }]
+
     for config in configs:
       self._testBatchNormGradGrad(config)
 

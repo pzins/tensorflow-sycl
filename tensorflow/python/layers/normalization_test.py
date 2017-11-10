@@ -24,6 +24,7 @@ import numpy as np
 from tensorflow.core.protobuf import saver_pb2
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
+from tensorflow.python.framework import test_util
 from tensorflow.python.layers import convolutional as conv_layers
 from tensorflow.python.layers import normalization as normalization_layers
 from tensorflow.python.ops import array_ops
@@ -33,6 +34,7 @@ from tensorflow.python.ops import random_ops
 from tensorflow.python.ops import variable_scope
 from tensorflow.python.ops import variables
 from tensorflow.python.platform import test
+from tensorflow.python.platform import tf_logging
 from tensorflow.python.training import gradient_descent
 from tensorflow.python.training import saver as saver_lib
 
@@ -140,11 +142,17 @@ class BNTest(test.TestCase):
     return train_vars, loss_val
 
   def testHalfPrecision(self):
+
+    #TODO: {liwanski} SYCL has no support for float16 yet
+    if "SYCL" in test_util.gpu_device_name():
+      tf_logging.info("skipping since SYCL doesn't support float16")
+      return
+
     ref_vars, ref_loss = self._trainEvalSequence(dtype=dtypes.float32,
                                                  train1_use_gpu=True,
                                                  train2_use_gpu=True,
                                                  infer_use_gpu=True)
- 
+
     self.assertEqual(len(ref_vars), 5)
 
     for train1_use_gpu in [True, False]:
