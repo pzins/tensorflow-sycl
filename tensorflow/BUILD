@@ -55,6 +55,15 @@ config_setting(
 )
 
 config_setting(
+    name = "raspberry_pi_armeabi",
+    values = {
+        "crosstool_top": "@local_config_arm_compiler//:toolchain",
+        "cpu": "armeabi",
+    },
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
     name = "android_arm",
     values = {
         "crosstool_top": "//external:android/crosstool",
@@ -384,6 +393,14 @@ filegroup(
     visibility = ["//tensorflow:__subpackages__"],
 )
 
+py_library(
+    name = "tensorflow_py",
+    srcs = ["__init__.py"],
+    srcs_version = "PY2AND3",
+    visibility = ["//visibility:public"],
+    deps = ["//tensorflow/python"],
+)
+
 filegroup(
     name = "all_opensource_files",
     data = [
@@ -403,6 +420,7 @@ filegroup(
         "//tensorflow/compiler/tf2xla:all_files",
         "//tensorflow/compiler/tf2xla/cc:all_files",
         "//tensorflow/compiler/tf2xla/kernels:all_files",
+        "//tensorflow/compiler/tf2xla/lib:all_files",
         "//tensorflow/compiler/tf2xla/ops:all_files",
         "//tensorflow/compiler/xla:all_files",
         "//tensorflow/compiler/xla/client:all_files",
@@ -475,6 +493,25 @@ filegroup(
         "//tensorflow/contrib/learn/python/learn/datasets:all_files",
         "//tensorflow/contrib/linalg:all_files",
         "//tensorflow/contrib/linear_optimizer:all_files",
+        "//tensorflow/contrib/lite:all_files",
+        "//tensorflow/contrib/lite/java:all_files",
+        "//tensorflow/contrib/lite/java/demo/app/src/main:all_files",
+        "//tensorflow/contrib/lite/java/demo/app/src/main/assets:all_files",
+        "//tensorflow/contrib/lite/java/src/main/native:all_files",
+        "//tensorflow/contrib/lite/java/src/testhelper/java/org/tensorflow/lite:all_files",
+        "//tensorflow/contrib/lite/kernels:all_files",
+        "//tensorflow/contrib/lite/kernels/internal:all_files",
+        "//tensorflow/contrib/lite/models/smartreply:all_files",
+        "//tensorflow/contrib/lite/nnapi:all_files",
+        "//tensorflow/contrib/lite/python:all_files",
+        "//tensorflow/contrib/lite/schema:all_files",
+        "//tensorflow/contrib/lite/testing:all_files",
+        "//tensorflow/contrib/lite/toco:all_files",
+        "//tensorflow/contrib/lite/toco/graph_transformations/tests:all_files",
+        "//tensorflow/contrib/lite/toco/python:all_files",
+        "//tensorflow/contrib/lite/toco/tensorflow_graph_matching:all_files",
+        "//tensorflow/contrib/lite/toco/tflite:all_files",
+        "//tensorflow/contrib/lite/tools:all_files",
         "//tensorflow/contrib/lookup:all_files",
         "//tensorflow/contrib/losses:all_files",
         "//tensorflow/contrib/makefile:all_files",
@@ -738,10 +775,9 @@ tf_cc_shared_object(
     ],
 )
 
-py_library(
-    name = "tensorflow_py",
-    srcs = ["__init__.py"],
-    srcs_version = "PY2AND3",
-    visibility = ["//visibility:public"],
-    deps = ["//tensorflow/python"],
+exports_files(
+    [
+        "tf_version_script.lds",
+        "tf_exported_symbols.lds",
+    ],
 )

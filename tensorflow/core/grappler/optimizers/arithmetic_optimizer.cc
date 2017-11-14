@@ -185,6 +185,10 @@ bool IsInnerMatrixTransposeNode(const NodeDef& transpose_node,
   return false;
 }
 
+bool SimplyReordersData(const NodeDef& node) {
+  return node.op() == "Transpose";
+}
+
 // Follow a chain (through input(0)) of ops starting at `source->input(0)` as
 // long as they
 //  1. preserve the values of their first input,
@@ -794,7 +798,8 @@ string ArithmeticOptimizer::TrySimplifyAndReplaceUses(
               scale_tensor.tensor_shape().dim_size() == 0) {
             // Create new node `scaled_weights`.
             NodeDef* scaled_weights = graph_def->add_node();
-            scaled_weights->set_name(weights->name() + "_scaled");
+            scaled_weights->set_name(weights->name() + "_scaled_" +
+                                     conv->name());
             scaled_weights->set_op("Mul");
             scaled_weights->set_device(weights->device());
             (*scaled_weights->mutable_attr())["T"] =

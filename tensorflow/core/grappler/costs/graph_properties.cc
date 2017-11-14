@@ -628,6 +628,8 @@ Status GraphProperties::InferStatically() {
     } while (!done);
   }
 
+  std::unordered_map<const shape_inference::Dimension*, int> dim_ids;
+
   // Track shapes globally accross the graph.
   SymbolicShapeManager shape_manager;
   bool found_error = false;

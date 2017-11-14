@@ -120,6 +120,7 @@ _tracing = False
 # gradient function registration site, to be less error-prone
 # TODO(apassos) add ops other than those in nn_grad and math_grad
 _ops_which_dont_need_outputs = set([
+    "Identity",
     "MatMul",
     "Conv2DBackpropInput",
     "Conv2DBackpropFilter",
@@ -195,6 +196,7 @@ _ops_which_dont_need_outputs = set([
 ])
 
 _ops_which_dont_need_inputs = set([
+    "Identity",
     "Softmax",
     "LogSoftmax",
     "BiasAdd",
@@ -833,5 +835,5 @@ class GradientTape(object):
                for x in sources]
     grad = imperative_grad.imperative_grad(
         _default_vspace, self._tape, [target], sources)
-    self.tape = None
+    self._tape = None
     return grad

@@ -212,7 +212,7 @@ class HloInstruction {
       tensorflow::gtl::ArraySlice<int64> strides);
 
   // Creates a slice instruction, where the first operand is sliced by
-  // start indices specified in the second operand, and by size specfied in
+  // start indices specified in the second operand, and by size specified in
   // 'slice_sizes'.
   static std::unique_ptr<HloInstruction> CreateDynamicSlice(
       const Shape& shape, HloInstruction* operand,
@@ -1239,7 +1239,9 @@ string ToString(HloInstruction::FusionKind kind);
 StatusOr<HloInstruction::FusionKind> StringToFusionKind(
     const string& kind_name);
 
+// Custom stringification functions for protos that live inside HloInstruction.
 string PaddingConfigToString(const PaddingConfig& padding);
+string OpMetadataToString(const OpMetadata& metadata);
 
 std::ostream& operator<<(std::ostream& os, HloInstruction::FusionKind kind);
 

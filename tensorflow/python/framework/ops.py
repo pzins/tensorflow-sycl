@@ -866,6 +866,10 @@ def convert_to_tensor(value, dtype=None, name=None, preferred_dtype=None):
   inputs, which allows those ops to accept numpy arrays, Python lists,
   and scalars in addition to `Tensor` objects.
 
+  Note: This function diverges from default Numpy behavior for `float` and
+    `string` types when `None` is present in a Python list or scalar. Rather
+    than silently converting `None` values, an error will be thrown.
+
   Args:
     value: An object whose type has a registered `Tensor` conversion function.
     dtype: Optional element type for the returned tensor. If missing, the
@@ -1641,7 +1645,7 @@ class Operation(object):
   def colocation_groups(self):
     """Returns the list of colocation groups of the op."""
     default_colocation_group = [
-        compat.as_bytes("loc:@%s" % self._node_def.name)
+        compat.as_bytes("loc:@%s" % self.name)
     ]
     try:
       class_attr = self.get_attr("_class")
@@ -1896,7 +1900,7 @@ class Operation(object):
           ["^%s" % op.name for op in self._control_inputs])
 
   def __str__(self):
-    return str(self._node_def)
+    return str(self.node_def)
 
   def __repr__(self):
     return "<tf.Operation '%s' type=%s>" % (self.name, self.type)
@@ -2013,7 +2017,7 @@ class Operation(object):
   @property
   def node_def(self):
     # pylint: disable=line-too-long
-    """Returns a serialized `NodeDef` representation of this operation.
+    """Returns the `NodeDef` representation of this operation.
 
     Returns:
       A
@@ -2021,7 +2025,16 @@ class Operation(object):
       protocol buffer.
     """
     # pylint: enable=line-too-long
-    return self._node_def
+    if self._c_op:
+      with c_api_util.tf_buffer() as buf:
+        with errors.raise_exception_on_not_ok_status() as status:
+          c_api.TF_OperationToNodeDef(self._c_op, buf, status)
+        data = c_api.TF_GetBuffer(buf)
+      node_def = node_def_pb2.NodeDef()
+      node_def.ParseFromString(compat.as_bytes(data))
+      return node_def
+    else:
+      return self._node_def
 
   @property
   def op_def(self):
@@ -2035,13 +2048,13 @@ class Operation(object):
     """
     # pylint: enable=line-too-long
     if self._c_op:
-      with errors.raise_exception_on_not_ok_status() as status:
-        with c_api_util.tf_buffer() as buf:
+      with c_api_util.tf_buffer() as buf:
+        with errors.raise_exception_on_not_ok_status() as status:
           # pylint: disable=protected-access
           c_api.TF_GraphGetOpDef(self._graph._c_graph,
                                  compat.as_bytes(self.type), buf, status)
           # pylint: enable=protected-access
-          data = c_api.TF_GetBuffer(buf)
+        data = c_api.TF_GetBuffer(buf)
       op_def = op_def_pb2.OpDef()
       op_def.ParseFromString(compat.as_bytes(data))
       return op_def
@@ -2752,10 +2765,10 @@ class Graph(object):
     """
     # pylint: enable=line-too-long
     if self._c_graph:
-      with errors.raise_exception_on_not_ok_status() as status:
-        with c_api_util.tf_buffer() as buf:
+      with c_api_util.tf_buffer() as buf:
+        with errors.raise_exception_on_not_ok_status() as status:
           c_api.TF_GraphVersions(self._c_graph, buf, status)
-          data = c_api.TF_GetBuffer(buf)
+        data = c_api.TF_GetBuffer(buf)
       version_def = versions_pb2.VersionDef()
       version_def.ParseFromString(compat.as_bytes(data))
       return version_def

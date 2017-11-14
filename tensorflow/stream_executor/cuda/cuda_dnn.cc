@@ -232,7 +232,6 @@ CUDNN_DNN_ROUTINE_EACH_R3(PERFTOOLS_GPUTOOLS_CUDNN_WRAP)
   __macro(cudnnRNNBackwardData)                               \
   __macro(cudnnRNNBackwardWeights)                            \
   __macro(cudnnSetRNNDescriptor)                              \
-  __macro(cudnnSetRNNDescriptor_v6)                           \
   __macro(cudnnGetFilterNdDescriptor)
 
 // clang-format on
@@ -245,7 +244,8 @@ CUDNN_DNN_ROUTINE_EACH_R5(PERFTOOLS_GPUTOOLS_CUDNN_WRAP)
 // clang-format off
 #if CUDNN_VERSION >= 6000
 #define CUDNN_DNN_ROUTINE_EACH_R6(__macro)                    \
-  __macro(cudnnConvolutionBiasActivationForward)
+  __macro(cudnnConvolutionBiasActivationForward)              \
+  __macro(cudnnSetRNNDescriptor_v6)
 
 // clang-format on
 CUDNN_DNN_ROUTINE_EACH_R6(PERFTOOLS_GPUTOOLS_CUDNN_WRAP)
@@ -665,7 +665,6 @@ class ScopedPoolingDescriptor {
       LOG(FATAL) << "could not create cudnn pooling descriptor: "
                  << ToString(status);
     }
-
     const std::vector<int64> strides64 = pooling_descriptor.strides();
     const std::vector<int64> padding64 = pooling_descriptor.padding();
     const std::vector<int64> shape64 = pooling_descriptor.window();
@@ -680,14 +679,14 @@ class ScopedPoolingDescriptor {
                    &CheckedNarrowing<int64, int>);
     std::transform(shape64.cbegin(), shape64.cend(), shape.begin(),
                    &CheckedNarrowing<int64, int>);
+    bool propagate_nans = pooling_descriptor.propagate_nans();
     status = wrap::cudnnSetPoolingNdDescriptor(
         parent_, handle_,
         (pooling_descriptor.mode() == dnn::PoolingMode::kMaximum
              ? CUDNN_POOLING_MAX
              : CUDNN_POOLING_AVERAGE_COUNT_EXCLUDE_PADDING),
 #if CUDNN_VERSION >= 5000
-        // Always propagate nans.
-        CUDNN_PROPAGATE_NAN,
+        propagate_nans ? CUDNN_PROPAGATE_NAN : CUDNN_NOT_PROPAGATE_NAN,
 #endif
         nd, shape.data(), padding.data(), strides.data());
     if (status != CUDNN_STATUS_SUCCESS) {
@@ -962,7 +961,8 @@ class CudnnDropoutDescriptor : public CudnnDescriptorCommon<void> {
       if (!allocated.ok() ||
           (state_memory = allocated.ValueOrDie()) == nullptr) {
         string error_msg =
-            port::StrCat("Fail to allocate Cudnn dropout state memory");
+            port::StrCat("Failed to allocate Cudnn dropout state memory of ",
+                         state_sizes_in_bytes, " bytes.");
         status_ = port::Status(port::error::UNKNOWN, error_msg);
         LOG(ERROR) << error_msg;
         return;
@@ -971,7 +971,10 @@ class CudnnDropoutDescriptor : public CudnnDescriptorCommon<void> {
     status = wrap::cudnnSetDropoutDescriptor(parent_, handle_, cudnn_handle,
                                              dropout, state_memory.opaque(),
                                              state_memory.size(), seed);
-    CUDNN_RETURN_IF_FAIL(status, "Failed to set dropout descriptor");
+    CUDNN_RETURN_IF_FAIL(
+        status, port::StrCat(
+                    "Failed to set dropout descriptor with state memory size: ",
+                    state_memory.size(), " bytes."));
   }
 
   ~CudnnDropoutDescriptor() {
@@ -1476,7 +1479,8 @@ bool CreateRnnWorkspace(Stream* stream, CUDAExecutor* parent,
     auto allocated =
         workspace_allocator->AllocateBytes(stream, workspace_size_in_bytes);
     if (!allocated.ok() || (*workspace = allocated.ValueOrDie()) == nullptr) {
-      LOG(ERROR) << "Failed to allocate RNN workspace";
+      LOG(ERROR) << port::StrCat("Failed to allocate RNN workspace of ",
+                                 workspace_size_in_bytes, " bytes.");
       return false;
     }
   } else {
@@ -1553,7 +1557,8 @@ bool CudnnSupport::DoRnnForwardImpl(
           stream, reserve_space_size_in_bytes);
       if (!allocated.ok() ||
           (reserve_space = allocated.ValueOrDie()) == nullptr) {
-        LOG(ERROR) << "Fail to allocate RNN reserve space";
+        LOG(ERROR) << "Failed to allocate RNN reserve space of "
+                   << reserve_space_size_in_bytes << " bytes.";
         return false;
       }
     }
