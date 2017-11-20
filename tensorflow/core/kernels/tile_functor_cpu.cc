@@ -94,13 +94,13 @@ typedef Eigen::SyclDevice SYCLDevice;
 template <typename T>
 struct TileSYCL {
   using write_accessor =
-      cl::sycl::accessor<uint8_t, 1, cl::sycl::access::mode::write,
+      cl::sycl::accessor<uint8_t, 1, cl::sycl::access::mode::read_write,
                          cl::sycl::access::target::global_buffer>;
   using read_accessor =
-      cl::sycl::accessor<uint8_t, 1, cl::sycl::access::mode::read,
+      cl::sycl::accessor<uint8_t, 1, cl::sycl::access::mode::read_write,
                          cl::sycl::access::target::global_buffer>;
   using stride_read_accessor =
-      cl::sycl::accessor<int64, 2, cl::sycl::access::mode::read,
+      cl::sycl::accessor<int64, 2, cl::sycl::access::mode::read_write,
                          cl::sycl::access::target::global_buffer>;
   TileSYCL(int ndims, const read_accessor input,
            const stride_read_accessor strides, write_accessor output)
@@ -147,8 +147,9 @@ struct TileFunctor<SYCLDevice, T> {
     // This holds the input strides, output strides and the input dimensions
     // needed for the kernel to compute the tile indices.
     cl::sycl::buffer<int64, 2> stride_buffer(cl::sycl::range<2>(3, ndims));
+    // As the buffer has been created now. no memory will be moved from device to host here when using read_write accessor on host.
     auto stride_host = stride_buffer.template get_access<
-        cl::sycl::access::mode::write, cl::sycl::access::target::host_buffer>();
+        cl::sycl::access::mode::read_write, cl::sycl::access::target::host_buffer>();
     for (int i = 0; i < ndims; ++i) {
       stride_host[cl::sycl::id<2>(0, i)] = in_strides[i];
       stride_host[cl::sycl::id<2>(1, i)] = out_strides[i];
@@ -157,11 +158,11 @@ struct TileFunctor<SYCLDevice, T> {
 
     d.sycl_queue().submit([&](cl::sycl::handler& cgh) {
       auto input_access =
-          input_buffer.template get_access<cl::sycl::access::mode::read>(cgh);
+          input_buffer.template get_access<cl::sycl::access::mode::read_write>(cgh);
       auto output_access =
-          output_buffer.template get_access<cl::sycl::access::mode::write>(cgh);
+          output_buffer.template get_access<cl::sycl::access::mode::read_write>(cgh);
       auto stride_access =
-          stride_buffer.template get_access<cl::sycl::access::mode::read>(cgh);
+          stride_buffer.template get_access<cl::sycl::access::mode::read_write>(cgh);
       TileSYCL<T> functor(ndims, input_access, stride_access, output_access);
 
       cgh.parallel_for(cl::sycl::range<1>(nelem), functor);

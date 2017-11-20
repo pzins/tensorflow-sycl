@@ -70,9 +70,13 @@ Status SYCLDevice::MakeTensorFromProto(const TensorProto& tensor_proto,
           "OOM when allocating tensor of shape ", parsed.shape().DebugString(),
           " and type ", DataTypeString(parsed.dtype()));
     }
-
+    Notification n;
     device_context_->CopyCPUTensorToDevice(
-        &parsed, this, &copy, [&status](const Status& s) { status = s; });
+        &parsed, this, &copy, [&status, &n](const Status& s) {
+          status = s;
+           n.Notify();
+        });
+    n.WaitForNotification();
     *tensor = copy;
   }
   return status;

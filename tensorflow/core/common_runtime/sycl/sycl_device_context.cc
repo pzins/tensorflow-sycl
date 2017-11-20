@@ -19,6 +19,9 @@ limitations under the License.
 
 #include "tensorflow/core/common_runtime/dma_helper.h"
 #include "tensorflow/core/common_runtime/sycl/sycl_device_context.h"
+#include "tensorflow/core/framework/tensor_reference.h"
+#include "tensorflow/core/lib/core/refcount.h"
+
 
 namespace tensorflow {
 
@@ -28,75 +31,66 @@ void SYCLDeviceContext::CopyCPUTensorToDevice(const Tensor *cpu_tensor,
                                               StatusCallback done) const {
   const int64 total_bytes = cpu_tensor->TotalBytes();
   if (total_bytes > 0) {
+
     const void *src_ptr = DMAHelper::base(cpu_tensor);
     void *dst_ptr = DMAHelper::base(device_tensor);
+    TensorReference input_ref(*cpu_tensor);
+    TensorReference output_ref(*device_tensor);
+    std::function<void()> syclCallBack = [done, input_ref, output_ref]() {
+      input_ref.Unref();
+      output_ref.Unref();
+      done(Status::OK());
+    };
+    #define COPY_WITH_TYPE(T) \
+    device->eigen_sycl_device()->memcpyHostToDevice(static_cast<T *>(dst_ptr), static_cast<const T *>(src_ptr), total_bytes, syclCallBack);
     switch (cpu_tensor->dtype()) {
       case DT_FLOAT:
-        device->eigen_sycl_device()->memcpyHostToDevice(
-            static_cast<float *>(dst_ptr), static_cast<const float *>(src_ptr),
-            total_bytes);
+        COPY_WITH_TYPE(float);
         break;
       case DT_DOUBLE:
-        device->eigen_sycl_device()->memcpyHostToDevice(
-            static_cast<double *>(dst_ptr),
-            static_cast<const double *>(src_ptr), total_bytes);
+        COPY_WITH_TYPE(double);
         break;
       case DT_INT32:
-        device->eigen_sycl_device()->memcpyHostToDevice(
-            static_cast<int32 *>(dst_ptr), static_cast<const int32 *>(src_ptr),
-            total_bytes);
+        COPY_WITH_TYPE(int32);
         break;
       case DT_INT64:
-        device->eigen_sycl_device()->memcpyHostToDevice(
-            static_cast<int64 *>(dst_ptr), static_cast<const int64 *>(src_ptr),
-            total_bytes);
+        COPY_WITH_TYPE(int64);
         break;
       case DT_HALF:
-        device->eigen_sycl_device()->memcpyHostToDevice(
-            static_cast<Eigen::half *>(dst_ptr),
-            static_cast<const Eigen::half *>(src_ptr), total_bytes);
+        COPY_WITH_TYPE(Eigen::half);
         break;
       case DT_COMPLEX64:
-        device->eigen_sycl_device()->memcpyHostToDevice(
-            static_cast<std::complex<float> *>(dst_ptr),
-            static_cast<const std::complex<float> *>(src_ptr), total_bytes);
+        COPY_WITH_TYPE(std::complex<float>);
         break;
       case DT_COMPLEX128:
-        device->eigen_sycl_device()->memcpyHostToDevice(
-            static_cast<std::complex<double> *>(dst_ptr),
-            static_cast<const std::complex<double> *>(src_ptr), total_bytes);
+        COPY_WITH_TYPE(std::complex<double>);
         break;
       case DT_INT8:
-        device->eigen_sycl_device()->memcpyHostToDevice(
-            static_cast<int8 *>(dst_ptr), static_cast<const int8 *>(src_ptr),
-            total_bytes);
+        COPY_WITH_TYPE(int8);
         break;
       case DT_INT16:
-        device->eigen_sycl_device()->memcpyHostToDevice(
-            static_cast<int16 *>(dst_ptr), static_cast<const int16 *>(src_ptr),
-            total_bytes);
+        COPY_WITH_TYPE(int16);
         break;
       case DT_UINT8:
-        device->eigen_sycl_device()->memcpyHostToDevice(
-            static_cast<uint8 *>(dst_ptr), static_cast<const uint8 *>(src_ptr),
-            total_bytes);
+        COPY_WITH_TYPE(uint8);
         break;
       case DT_UINT16:
-        device->eigen_sycl_device()->memcpyHostToDevice(
-            static_cast<uint16 *>(dst_ptr),
-            static_cast<const uint16 *>(src_ptr), total_bytes);
+        COPY_WITH_TYPE(uint16);
         break;
       case DT_BOOL:
-        device->eigen_sycl_device()->memcpyHostToDevice(
-            static_cast<bool *>(dst_ptr), static_cast<const bool *>(src_ptr),
-            total_bytes);
+        COPY_WITH_TYPE(bool);
         break;
       default:
-        assert(false && "unsupported type");
+      LOG(FATAL) << "Unknown data type " << cpu_tensor->dtype();
+      input_ref.Unref();
+      output_ref.Unref();
+      done((Status(tensorflow::error::UNAVAILABLE, "Unknown data type")));
+      assert(false && "unsupported type");
     }
+  } else {
+    done(Status::OK());
   }
-  device->eigen_sycl_device()->synchronize();
-  done(Status::OK());
+  #undef COPY_WITH_TYPE
 }
 
 void SYCLDeviceContext::CopyDeviceTensorToCPU(const Tensor *device_tensor,
@@ -104,77 +98,73 @@ void SYCLDeviceContext::CopyDeviceTensorToCPU(const Tensor *device_tensor,
                                               Device *device,
                                               Tensor *cpu_tensor,
                                               StatusCallback done) {
+
   const int64 total_bytes = device_tensor->TotalBytes();
   if (total_bytes > 0) {
     const void *src_ptr = DMAHelper::base(device_tensor);
     void *dst_ptr = DMAHelper::base(cpu_tensor);
+    TensorReference input_ref(*device_tensor);
+    TensorReference output_ref(*cpu_tensor);
+   /// Notification is required for CPU if they dont wait. SYCL does not need it.
+   /// the unref should happen through calback at SYCL end. unfortunately that
+   /// coud cause dealock when the buffer needed to be deleted. So as a temporary
+   /// solution I have put it outside. As a result the memcopy would be blocking
+   /// but it does not create deadlock.
+    std::function<void()> syclCallBack = [done, input_ref, output_ref]() {
+      input_ref.Unref();
+      output_ref.Unref();
+      done(Status::OK());
+    };
+  #define COPY_WITH_TYPE(T) \
+    device->eigen_sycl_device()->memcpyDeviceToHost(static_cast<T *>(dst_ptr), static_cast<const T *>(src_ptr),total_bytes, syclCallBack);
     switch (device_tensor->dtype()) {
       case DT_FLOAT:
-        device->eigen_sycl_device()->memcpyDeviceToHost(
-            static_cast<float *>(dst_ptr), static_cast<const float *>(src_ptr),
-            total_bytes);
+        COPY_WITH_TYPE(float);
         break;
       case DT_DOUBLE:
-        device->eigen_sycl_device()->memcpyDeviceToHost(
-            static_cast<double *>(dst_ptr),
-            static_cast<const double *>(src_ptr), total_bytes);
+        COPY_WITH_TYPE(double);
         break;
       case DT_INT32:
-        device->eigen_sycl_device()->memcpyDeviceToHost(
-            static_cast<int32 *>(dst_ptr), static_cast<const int32 *>(src_ptr),
-            total_bytes);
+        COPY_WITH_TYPE(int32);
         break;
       case DT_INT64:
-        device->eigen_sycl_device()->memcpyDeviceToHost(
-            static_cast<int64 *>(dst_ptr), static_cast<const int64 *>(src_ptr),
-            total_bytes);
+        COPY_WITH_TYPE(int64);
         break;
       case DT_HALF:
-        device->eigen_sycl_device()->memcpyDeviceToHost(
-            static_cast<Eigen::half *>(dst_ptr),
-            static_cast<const Eigen::half *>(src_ptr), total_bytes);
+        COPY_WITH_TYPE(Eigen::half);
         break;
       case DT_COMPLEX64:
-        device->eigen_sycl_device()->memcpyDeviceToHost(
-            static_cast<std::complex<float> *>(dst_ptr),
-            static_cast<const std::complex<float> *>(src_ptr), total_bytes);
+        COPY_WITH_TYPE(std::complex<float>);
         break;
       case DT_COMPLEX128:
-        device->eigen_sycl_device()->memcpyDeviceToHost(
-            static_cast<std::complex<double> *>(dst_ptr),
-            static_cast<const std::complex<double> *>(src_ptr), total_bytes);
+        COPY_WITH_TYPE(std::complex<double>);
         break;
       case DT_INT8:
-        device->eigen_sycl_device()->memcpyDeviceToHost(
-            static_cast<int8 *>(dst_ptr), static_cast<const int8 *>(src_ptr),
-            total_bytes);
+        COPY_WITH_TYPE(int8);
         break;
       case DT_INT16:
-        device->eigen_sycl_device()->memcpyDeviceToHost(
-            static_cast<int16 *>(dst_ptr), static_cast<const int16 *>(src_ptr),
-            total_bytes);
+        COPY_WITH_TYPE(int16);
         break;
       case DT_UINT8:
-        device->eigen_sycl_device()->memcpyDeviceToHost(
-            static_cast<uint8 *>(dst_ptr), static_cast<const uint8 *>(src_ptr),
-            total_bytes);
+        COPY_WITH_TYPE(uint8);
         break;
       case DT_UINT16:
-        device->eigen_sycl_device()->memcpyDeviceToHost(
-            static_cast<uint16 *>(dst_ptr),
-            static_cast<const uint16 *>(src_ptr), total_bytes);
+        COPY_WITH_TYPE(uint16);
         break;
       case DT_BOOL:
-        device->eigen_sycl_device()->memcpyDeviceToHost(
-            static_cast<bool *>(dst_ptr), static_cast<const bool *>(src_ptr),
-            total_bytes);
+        COPY_WITH_TYPE(bool);
         break;
       default:
+        LOG(FATAL) << "Unknown data type " << device_tensor->dtype();
+        input_ref.Unref();
+        output_ref.Unref();
+        done((Status(tensorflow::error::UNAVAILABLE, "Unknown data type")));
         assert(false && "unsupported type");
     }
+    #undef COPY_WITH_TYPE
+  } else {
+    done(Status::OK());
   }
-  device->eigen_sycl_device()->synchronize();
-  done(Status::OK());
 }
 
 }  // namespace tensorflow

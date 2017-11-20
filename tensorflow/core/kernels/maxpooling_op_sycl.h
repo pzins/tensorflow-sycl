@@ -44,8 +44,8 @@ RoundUpToNearestMultiple(const IntegerType val, const IntegerType multiplier) {
 template <typename T>
 class MaxPool2DSYCL {
  public:
-  static constexpr auto read_mode = cl::sycl::access::mode::read;
-  static constexpr auto write_mode = cl::sycl::access::mode::discard_write;
+  static constexpr auto read_mode = cl::sycl::access::mode::read_write;
+  static constexpr auto write_mode = cl::sycl::access::mode::read_write;
   static constexpr auto global_access = cl::sycl::access::target::global_buffer;
   using read_accessor =
       cl::sycl::accessor<uint8_t, 1, read_mode, global_access>;
@@ -140,8 +140,8 @@ struct LaunchMaxPoolingOpSYCL {
 template <typename T>
 class MaxPoolGradSYCL {
  public:
-  static constexpr auto read_mode = cl::sycl::access::mode::read;
-  static constexpr auto write_mode = cl::sycl::access::mode::discard_write;
+  static constexpr auto read_mode = cl::sycl::access::mode::read_write;
+  static constexpr auto write_mode = cl::sycl::access::mode::read_write;
   static constexpr auto global_access = cl::sycl::access::target::global_buffer;
   using read_accessor =
       cl::sycl::accessor<uint8_t, 1, read_mode, global_access>;
@@ -291,8 +291,8 @@ struct LaunchMaxPoolingGradOpSYCL {
 template <typename T>
 class MaxPoolGradGradSYCL {
  public:
-  static constexpr auto read_mode = cl::sycl::access::mode::read;
-  static constexpr auto write_mode = cl::sycl::access::mode::discard_write;
+  static constexpr auto read_mode = cl::sycl::access::mode::read_write;
+  static constexpr auto write_mode = cl::sycl::access::mode::read_write;
   static constexpr auto global_access = cl::sycl::access::target::global_buffer;
   using read_accessor =
       cl::sycl::accessor<uint8_t, 1, read_mode, global_access>;
