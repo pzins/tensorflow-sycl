@@ -212,10 +212,10 @@ REGISTER_KERNEL_BUILDER(
 template <typename T>
 class AvgPool2DSYCL {
   using write_accessor =
-      cl::sycl::accessor<uint8_t, 1, cl::sycl::access::mode::read_write,
+      cl::sycl::accessor<uint8_t, 1, cl::sycl::access::mode::write,
                          cl::sycl::access::target::global_buffer>;
   using read_accessor =
-      cl::sycl::accessor<uint8_t, 1, cl::sycl::access::mode::read_write,
+      cl::sycl::accessor<uint8_t, 1, cl::sycl::access::mode::read,
                          cl::sycl::access::target::global_buffer>;
 
  public:
@@ -290,9 +290,9 @@ struct LaunchAvgPoolingOpSYCL {
 
     device.sycl_queue().submit([&](cl::sycl::handler& cgh) {
       auto input_access =
-          input_buffer.template get_access<cl::sycl::access::mode::read_write>(cgh);
+          input_buffer.template get_access<cl::sycl::access::mode::read>(cgh);
       auto output_access =
-          output_buffer.template get_access<cl::sycl::access::mode::read_write>(cgh);
+          output_buffer.template get_access<cl::sycl::access::mode::write>(cgh);
       AvgPool2DSYCL<T> avg_pool(depth, batch, in_rows, in_cols, out_rows,
                                 out_cols, window, stride, padding, input_access,
                                 output_access);
@@ -748,10 +748,10 @@ REGISTER_KERNEL_BUILDER(Name("AvgPoolGrad")
 template <typename T>
 class AvgPoolGradSYCL {
   using write_accessor =
-      cl::sycl::accessor<uint8_t, 1, cl::sycl::access::mode::read_write,
+      cl::sycl::accessor<uint8_t, 1, cl::sycl::access::mode::write,
                          cl::sycl::access::target::global_buffer>;
   using read_accessor =
-      cl::sycl::accessor<uint8_t, 1, cl::sycl::access::mode::read_write,
+      cl::sycl::accessor<uint8_t, 1, cl::sycl::access::mode::read,
                          cl::sycl::access::target::global_buffer>;
 
  public:
@@ -836,10 +836,10 @@ struct LaunchAvgPoolingGradOpSYCL {
     device.sycl_queue().submit([&](cl::sycl::handler& cgh) {
       auto input_backprop_access =
           input_backprop_buffer
-              .template get_access<cl::sycl::access::mode::read_write>(cgh);
+              .template get_access<cl::sycl::access::mode::read>(cgh);
       auto output_backprop_access =
           output_backprop_buffer
-              .template get_access<cl::sycl::access::mode::read_write>(cgh);
+              .template get_access<cl::sycl::access::mode::write>(cgh);
       AvgPoolGradSYCL<T> avgpoolgrad(
           depth, batch, in_rows, in_cols, output_shape, window, stride, padding,
           input_backprop_access, output_backprop_access);

@@ -255,8 +255,8 @@ template <typename T>
 struct Conv2DSYCL {
   using Index = int;
   using buffer_data = uint8_t;
-  static constexpr auto read_mode = cl::sycl::access::mode::read_write;
-  static constexpr auto write_mode = cl::sycl::access::mode::read_write;
+  static constexpr auto read_mode = cl::sycl::access::mode::read;
+  static constexpr auto write_mode = cl::sycl::access::mode::write;
   static constexpr auto global_access = cl::sycl::access::target::global_buffer;
   using write_accessor =
       cl::sycl::accessor<buffer_data, 1, write_mode, global_access>;
@@ -310,8 +310,8 @@ template <typename T>
 struct Conv2DBackpropSYCL {
   using Index = int;
   using buffer_data = uint8_t;
-  static constexpr auto read_mode = cl::sycl::access::mode::read_write;
-  static constexpr auto write_mode = cl::sycl::access::mode::read_write;
+  static constexpr auto read_mode = cl::sycl::access::mode::read;
+  static constexpr auto write_mode = cl::sycl::access::mode::write;
   static constexpr auto global_access = cl::sycl::access::target::global_buffer;
   using write_accessor =
       cl::sycl::accessor<buffer_data, 1, write_mode, global_access>;
@@ -370,8 +370,8 @@ template <typename T>
 struct Conv2DBackpropFilterSYCL {
   using Index = int;
   using buffer_data = uint8_t;
-  static constexpr auto read_mode = cl::sycl::access::mode::read_write;
-  static constexpr auto write_mode = cl::sycl::access::mode::read_write;
+  static constexpr auto read_mode = cl::sycl::access::mode::read;
+  static constexpr auto write_mode = cl::sycl::access::mode::write;
   static constexpr auto global_access = cl::sycl::access::target::global_buffer;
   using write_accessor =
       cl::sycl::accessor<buffer_data, 1, write_mode, global_access>;
