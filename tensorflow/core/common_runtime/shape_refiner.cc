@@ -148,6 +148,7 @@ Status ShapeRefiner::InferShapesForFunction(
   }
 
   ShapeRefiner refiner(graph.versions().producer(), &function_library);
+  refiner.set_disable_constant_propagation(disable_constant_propagation_);
   refiner.set_function_library_for_shape_inference(&function_library);
   if (keep_nested_shapes) refiner.set_keep_nested_shape_inferences();
 
@@ -332,7 +333,8 @@ Status ShapeRefiner::UpdateNode(const Node* node, bool relax, bool* refined) {
     InferenceContext* c = iter->second->get_context();
     DCHECK_GE(dst_input, 0);
     ShapeHandle existing_input = node_context->input(dst_input);
-    if (!relax && node_context->MergeInput(dst_input, c->output(src_output))) {
+    if (!relax && node_context->MergeInput(dst_input, c->output(src_output)) &&
+        !existing_input.SameHandle(node_context->input(dst_input))) {
       *refined = true;
     } else if (relax) {
       if (node_context->RelaxInput(dst_input, c->output(src_output))) {

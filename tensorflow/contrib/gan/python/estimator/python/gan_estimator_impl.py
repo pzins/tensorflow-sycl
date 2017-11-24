@@ -76,7 +76,7 @@ class GANEstimator(estimator.Estimator):
         return logits
 
       # Create GAN estimator.
-      gan_estimator = estimator.GANEstimator(
+      gan_estimator = tfgan.estimator.GANEstimator(
           model_dir,
           generator_fn=generator_fn,
           discriminator_fn=discriminator_fn,
@@ -238,7 +238,7 @@ def _make_train_gan_model(generator_fn, discriminator_fn, real_data,
   if add_summaries:
     if not isinstance(add_summaries, (tuple, list)):
       add_summaries = [add_summaries]
-    with ops.name_scope(''):
+    with ops.name_scope(None):
       for summary_type in add_summaries:
         _summary_type_map[summary_type](gan_model)
 

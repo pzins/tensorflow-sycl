@@ -48,10 +48,6 @@ limitations under the License.
 #include "tensorflow/core/platform/stream_executor.h"
 #endif  // GOOGLE_CUDA
 
-#ifdef TENSORFLOW_USE_SYCL
-#include "tensorflow/core/kernels/conv_ops_sycl.h"
-#endif  // TENSORFLOW_USE_SYCL
-
 namespace {
 
 // Returns in 'col_data', image patches in storage order (height, width, depth)
@@ -111,6 +107,22 @@ struct LaunchConv2DBackpropFilterOp<CPUDevice, T> {
         filter_backprop->dim_size(1), row_stride, col_stride);
   }
 };
+
+#ifdef TENSORFLOW_USE_SYCL
+template <typename T>
+struct LaunchConv2DBackpropFilterOp<SYCLDevice, T> {
+  void operator()(OpKernelContext* ctx, bool use_cudnn, bool cudnn_use_autotune,
+                  const Tensor& out_backprop, const Tensor& input,
+                  int row_stride, int col_stride, const Padding& padding,
+                  Tensor* filter_backprop, TensorFormat data_format) {
+    const SYCLDevice& d = ctx->eigen_device<SYCLDevice>();
+    functor::SpatialConvolutionBackwardKernel<SYCLDevice, T>()(
+        d, filter_backprop->tensor<T, 4>(), input.tensor<T, 4>(),
+        out_backprop.tensor<T, 4>(), filter_backprop->dim_size(0),
+        filter_backprop->dim_size(1), row_stride, col_stride);
+  }
+};
+#endif  // TENSORFLOW_USE_SYCL
 
 #ifdef TENSORFLOW_USE_LIBXSMM
 template <typename Device, class T>
@@ -228,6 +240,11 @@ class Conv2DFastBackpropFilterOp : public OpKernel {
     OP_REQUIRES_OK(context,
                    context->allocate_output(0, filter_shape, &filter_backprop));
 
+    // If there is nothing to compute, return.
+    if (filter_shape.num_elements() == 0) {
+      return;
+    }
+
 #if defined TENSORFLOW_USE_LIBXSMM && defined TENSORFLOW_USE_LIBXSMM_BACKWARD
     int64 pad_top, pad_bottom;
     int64 pad_left, pad_right;
@@ -319,6 +336,11 @@ class Conv2DCustomBackpropFilterOp : public OpKernel {
     Tensor* filter_backprop;
     OP_REQUIRES_OK(context,
                    context->allocate_output(0, filter_shape, &filter_backprop));
+
+    // If there is nothing to compute, return.
+    if (filter_shape.num_elements() == 0) {
+      return;
+    }
 
     int64 pad_top, pad_bottom;
     int64 pad_left, pad_right;
@@ -533,6 +555,11 @@ class Conv2DSlowBackpropFilterOp : public OpKernel {
     Tensor* filter_backprop = nullptr;
     OP_REQUIRES_OK(context,
                    context->allocate_output(0, filter_shape, &filter_backprop));
+
+    // If there is nothing to compute, return.
+    if (filter_shape.num_elements() == 0) {
+      return;
+    }
 
     // For now we take the stride from the second and third dimensions only (we
     // do not support striding on the batch or depth dimension).
@@ -955,7 +982,8 @@ REGISTER_KERNEL_BUILDER(Name("Conv2DBackpropFilter")
                               .TypeConstraint<T>("T")      \
                               .HostMemory("filter_sizes"), \
                           Conv2DFastBackpropFilterOp<SYCLDevice, T>);
-TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL_KERNELS);
+
+REGISTER_SYCL_KERNELS(float);
 #undef REGISTER_SYCL_KERNELS
 #endif  // TENSORFLOW_USE_SYCL
 

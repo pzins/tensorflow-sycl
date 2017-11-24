@@ -64,6 +64,7 @@ void SetZeroFunctor<Eigen::SyclDevice, T>::operator()(
 #define DEFINE_SETZERO_SYCL(T) \
   template struct SetZeroFunctor<Eigen::SyclDevice, T>;
 DEFINE_SETZERO_SYCL(bool);
+DEFINE_SETZERO_SYCL(Eigen::half);
 DEFINE_SETZERO_SYCL(float);
 DEFINE_SETZERO_SYCL(double);
 DEFINE_SETZERO_SYCL(uint8);

@@ -60,6 +60,7 @@ from tensorflow.core.protobuf import control_flow_pb2
 from tensorflow.python.eager import context
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
+from tensorflow.python.framework import errors
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import sparse_tensor
 from tensorflow.python.framework import tensor_shape
@@ -86,6 +87,29 @@ from tensorflow.python.util import tf_should_use
 _basetuple = tuple
 
 
+def _summarize_eager(tensor, summarize=None):
+  """Returns a summarized string representation of eager `tensor`.
+
+  Args:
+    tensor: EagerTensor to summarize
+    summarize: Include these many first elements of `array`
+  """
+  # reshape((-1,)) is the fastest way to get a flat array view
+  if tensor._rank():  # pylint: disable=protected-access
+    flat = tensor.numpy().reshape((-1,))
+    lst = [str(x) for x in flat[:summarize]]
+    if len(lst) < flat.size:
+      lst.append("...")
+  else:
+    # tensor.numpy() returns a scalar for zero dimensional arrays
+    if summarize != 0:
+      lst = [str(tensor.numpy())]
+    else:
+      lst = []
+
+  return ", ".join(lst)
+
+
 # pylint: disable=protected-access
 
 
@@ -98,7 +122,8 @@ def Assert(condition, data, summarize=None, name=None):
   If `condition` evaluates to false, print the list of tensors in `data`.
   `summarize` determines how many entries of the tensors to print.
 
-  NOTE: To ensure that Assert executes, one usually attaches a dependency:
+  NOTE: In graph mode, to ensure that Assert executes, one usually attaches
+  a dependency:
 
   ```python
   # Ensure maximum element of x is smaller or equal to 1
@@ -116,7 +141,22 @@ def Assert(condition, data, summarize=None, name=None):
   Returns:
     assert_op: An `Operation` that, when executed, raises a
     `tf.errors.InvalidArgumentError` if `condition` is not true.
+    @compatibility{eager} returns None.
+
+  Raises:
+    @compatibility{eager} `tf.errors.InvalidArgumentError` if `condition`
+    is not true
   """
+  if context.in_eager_mode():
+    if not condition:
+      xs = ops.convert_n_to_tensor(data)
+      data_str = [_summarize_eager(x, summarize) for x in xs]
+      raise errors.InvalidArgumentError(
+          node_def=None, op=None,
+          message="Expected '%s' to be true. Summarized data: %s" % (
+              condition, "\n".join(data_str)))
+    return
+
   with ops.name_scope(name, "Assert", [condition, data]) as name:
     xs = ops.convert_n_to_tensor(data)
     if all([x.dtype in {dtypes.string, dtypes.int32} for x in xs]):
@@ -132,6 +172,8 @@ def Assert(condition, data, summarize=None, name=None):
             condition, data, summarize, name="Assert")
       guarded_assert = cond(
           condition, no_op, true_assert, name="AssertGuard")
+      if context.in_eager_mode():
+        return
       return guarded_assert.op
 
 
@@ -1835,8 +1877,8 @@ def cond(pred, true_fn=None, false_fn=None, strict=False, name=None,
   with ops.name_scope(name, "cond", [pred]):
     if context.in_eager_mode():
       if pred:
-        return true_fn()
-      return false_fn()
+        return _UnpackIfSingleton(true_fn())
+      return _UnpackIfSingleton(false_fn())
 
     # Add the Switch to the graph.
     if isinstance(pred, bool):
@@ -2907,7 +2949,7 @@ def _GroupControlDeps(dev, deps, name=None):
 def group(*inputs, **kwargs):
   """Create an op that groups multiple operations.
 
-  When this op finishes, all ops in `input` have finished. This op has no
+  When this op finishes, all ops in `inputs` have finished. This op has no
   output.
 
   See also @{tf.tuple$tuple} and
@@ -2915,7 +2957,6 @@ def group(*inputs, **kwargs):
 
   Args:
     *inputs: Zero or more tensors to group.
-    **kwargs: Optional parameters to pass when constructing the NodeDef.
     name: A name for this operation (optional).
 
   Returns:
@@ -2936,7 +2977,16 @@ def group(*inputs, **kwargs):
 
     # Sorts *inputs according to their devices.
     ops_on_device = {}  # device -> operations specified on the device.
-    for inp in inputs:
+    for inp in nest.flatten(inputs):
+      if not hasattr(inp, "device"):
+        raise TypeError("Expected tf.group() expected Tensor arguments not "
+                        "'%s' with type '%s'" % (inp, type(inp)))
+      if not hasattr(inp, "device"):
+        if isinstance(inp, list):
+          raise TypeError("To call tf.group() with a list, use "
+                          "tf.group(*[...]) not tf.group([...]).")
+        raise TypeError("Expected tf.group() expected Tensor arguments not "
+                        "'%s' with type '%s'" % (inp, type(inp)))
       dev = inp.device
       if dev in ops_on_device:
         ops_on_device[dev].append(inp)

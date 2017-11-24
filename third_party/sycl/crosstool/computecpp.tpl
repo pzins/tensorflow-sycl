@@ -35,20 +35,20 @@ def get_cpp_info(compiler_flags):
     compiling_cpp = compiled_file_name.endswith(CPP_extensions)
   return compiling_cpp, compiled_file_index, compiled_file_name
 
-def add_env_vars_to_flags(flags):
-  """Add required env vars to compiler flags as needed for all compilers."""
-  # add -D_GLIBCXX_USE_CXX11_ABI=0 to the command line if you have custom installation of GCC/Clang
-  extra_env_vars = [
-      '-DEIGEN_HAS_C99_MATH',
-  ]
-  return flags + extra_env_vars
-
 def add_sycl_env_vars_to_flags(flags):
   """Add required env vars to compiler flags as needed for ComputeCpp."""
   extra_env_vars = [
       '-DTENSORFLOW_USE_SYCL=1',
-      '-DEIGEN_USE_SYCL=1'
+      '-DEIGEN_USE_SYCL=1',
   ]
+
+  # Silence Clang warning
+  if "clang" in CPU_CXX_COMPILER:
+    extra_env_vars += [
+    '-Wno-unused-const-variable',
+    '-Wno-unused-command-line-argument'
+    ]
+
   # If TF_VECTORIZE_SYCL is defined and positive, don't add the flag to disable
   # vectorisation
   if int(os.getenv('TF_VECTORIZE_SYCL', -1)) <= 0:
@@ -73,13 +73,6 @@ def is_external(compiled_file_name, output_file_name):
   matches_ext = any(compiled_file_name.endswith(_ext) for _ext in skip_extensions)
   matches_folder = any(_folder in output_file_name for _folder in skip_folders)
   return matches_ext or matches_folder
-
-def get_preprocessor_flags(compiler_flags, output_file_index):
-  """Set up the preprocessor flags, removing any output flags."""
-  flags_without_output = list(compiler_flags)
-  del flags_without_output[output_file_index]   # remove output_file_name
-  del flags_without_output[output_file_index - 1] # remove '-o'
-  return flags_without_output + ['-E']
 
 def remove_unknown_computecpp_flags(flags):
   """Remove flags not recognised by the device compiler. Also remove any CPU
@@ -122,6 +115,7 @@ def get_host_compiler_flags(compiler_flags, bc_out):
   host_compiler_flags = [flag for flag in compiler_flags if (not flag.startswith(device_flag_prefixes) and not '.d' in flag)]
   host_compiler_flags[host_compiler_flags.index('-c')] = "--include"
   host_compiler_flags = [
+      '-DEIGEN_HAS_C99_MATH',
       '-xc++',
       '-Wno-unused-variable',
       '-I', COMPUTECPP_INCLUDE,
@@ -139,7 +133,6 @@ def main():
     # we are linking
     return call([CPU_CXX_COMPILER] + compiler_flags + ['-Wl,--no-undefined'])
 
-  compiler_flags = add_env_vars_to_flags(compiler_flags)
   compiling_cpp, compiled_file_index, compiled_file_name = get_cpp_info(compiler_flags)
 
   if not compiling_cpp:
@@ -150,26 +143,6 @@ def main():
     return call([CPU_CXX_COMPILER] + compiler_flags)
 
   compiler_flags = add_sycl_env_vars_to_flags(compiler_flags)
-
-  # this is an optimisation that will check if compiled file has to be compiled
-  # with ComputeCpp. Any file without a 'parallel_for' can be skipped and
-  # compiled solely with the host compiler.
-  pp_flags = get_preprocessor_flags(compiler_flags, output_file_index)
-  pipe = Popen([CPU_CXX_COMPILER] + pp_flags, stdout=PIPE)
-  preprocessed_file_str = pipe.communicate()[0]
-  if pipe.returncode != 0:
-    return pipe.returncode
-
-  # check if it has parallel_for in it
-  if not b'.parallel_for' in preprocessed_file_str:
-    # call CXX compiler like usual
-    # Force '.ii' extension so that g++ does not preprocess the file again
-    with tempfile.NamedTemporaryFile(suffix=".ii") as preprocessed_file:
-      preprocessed_file.write(preprocessed_file_str)
-      preprocessed_file.flush()
-      compiler_flags[compiled_file_index] = preprocessed_file.name
-      return call([CPU_CXX_COMPILER] + compiler_flags)
-  del preprocessed_file_str   # save some memory as this string can be quite big
 
   filename, file_extension = os.path.splitext(output_file_name)
   bc_out = filename + '.sycl'

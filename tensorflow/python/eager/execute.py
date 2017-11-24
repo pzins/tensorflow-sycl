@@ -47,8 +47,7 @@ def execute(op_name, num_outputs, inputs, attrs, ctx, name=None):
     name: Customized name for the operation.
 
   Returns:
-    None if there are no outputs, a single Tensor object if there is one output
-    and a list of Tensor objects if there are multiple outputs.
+    List of output Tensor objects. The list is empty if there are no outputs
 
   Raises:
     An exception on error.
@@ -198,8 +197,11 @@ def args_to_matching_eager(l, ctx, default_dtype=None):
 
 
 def convert_to_mixed_eager_tensors(values, ctx):
-  v = [t if isinstance(t, ops.EagerTensor) else ops.EagerTensor(t, ctx)
-       for t in values]
+  v = [
+      t if isinstance(t, ops.EagerTensor) else ops.EagerTensor(
+          t, context=ctx._handle, device=ctx.device_name)  # pylint: disable=protected-access
+      for t in values
+  ]
   types = [t.dtype for t in v]
   return types, v
 

@@ -19,6 +19,7 @@ limitations under the License.
 #include <unordered_set>
 #include "tensorflow/core/grappler/optimizers/graph_optimizer.h"
 #include "tensorflow/core/grappler/utils.h"
+#include "tensorflow/core/protobuf/rewriter_config.pb.h"
 
 namespace tensorflow {
 namespace grappler {
@@ -27,7 +28,9 @@ namespace grappler {
 // run a model.
 class ArithmeticOptimizer : public GraphOptimizer {
  public:
-  ArithmeticOptimizer() {}
+  ArithmeticOptimizer() : opt_level_(RewriterConfig::ON) {}
+  explicit ArithmeticOptimizer(RewriterConfig::Toggle opt_level)
+      : opt_level_(opt_level) {}
   ~ArithmeticOptimizer() override {}
 
   string name() const override { return "arithmetic_optimizer"; };
@@ -43,7 +46,7 @@ class ArithmeticOptimizer : public GraphOptimizer {
   void DedupComputations(GraphDef* optimized_graph) const;
   // Runs peep-hole optimizations on `optimized_graph`, e.g., removing inverse
   // transposes.
-  void SimplifyArithmeticOps(GraphDef* optimized_graph) const;
+  Status SimplifyArithmeticOps(GraphDef* optimized_graph) const;
   // Tries to simplify the expression that roots at `node` and replaces the uses
   // of `node` to the simplified expression. Returns the name of the simplified
   // tensor (e.g. "split:1") or an emtpy string if no simplification is
@@ -61,9 +64,12 @@ class ArithmeticOptimizer : public GraphOptimizer {
   // NodeDef.
   string TrySimplifyAndReplaceUses(
       const NodeDef* node, GraphDef* graph_def, NodeMap* node_map,
-      std::vector<const NodeDef*>* new_nodes) const;
+      std::vector<const NodeDef*>* new_nodes,
+      std::unordered_map<const NodeDef*, std::vector<int>>* frame_map) const;
 
   std::unordered_set<string> nodes_to_preserve_;
+
+  RewriterConfig::Toggle opt_level_;
 };
 
 }  // end namespace grappler

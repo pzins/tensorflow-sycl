@@ -7,7 +7,6 @@ package_group(
     packages = [
         "//tensorflow/compiler/...",
         "//tensorflow/contrib/tpu/...",
-        "//tensorflow/contrib/xla_tf_graph/...",
     ],
 )
 
@@ -78,6 +77,7 @@ cc_library(
     hdrs = ["types.h"],
     visibility = [":friends"],
     deps = [
+        "//tensorflow/core:framework_lite",
         "//tensorflow/core:lib",
         "//third_party/eigen3",
     ],
@@ -171,6 +171,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":status",
+        ":status_macros",
         ":types",
         ":xla_data_proto",
         "//tensorflow/core:lib",
@@ -336,11 +337,32 @@ cc_library(
 )
 
 cc_library(
+    name = "array",
+    hdrs = ["array.h"],
+    deps = [
+        ":status",
+        ":types",
+        "//tensorflow/core:lib",
+    ],
+)
+
+tf_cc_test(
+    name = "array_test",
+    srcs = ["array_test.cc"],
+    deps = [
+        ":array",
+        ":test",
+        "//tensorflow/core:test_main",
+    ],
+)
+
+cc_library(
     name = "array2d",
     srcs = ["array2d.cc"],
     hdrs = ["array2d.h"],
     visibility = ["//visibility:public"],
     deps = [
+        ":array",
         ":types",
         ":util",
         "//tensorflow/core:lib",
@@ -362,6 +384,7 @@ cc_library(
     hdrs = ["array3d.h"],
     visibility = [":friends"],
     deps = [
+        ":array",
         ":types",
         "//tensorflow/core:lib",
     ],
@@ -383,6 +406,7 @@ cc_library(
     hdrs = ["array4d.h"],
     visibility = [":friends"],
     deps = [
+        ":array",
         ":array2d",
         ":types",
         "//tensorflow/core:lib",

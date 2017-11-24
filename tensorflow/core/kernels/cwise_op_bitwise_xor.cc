@@ -20,18 +20,8 @@ REGISTER6(BinaryOp, CPU, "BitwiseXor", functor::bitwise_xor, int8, int16, int32,
           int64, uint8, uint16);
 
 #if TENSORFLOW_USE_SYCL
-#define REGISTER_SYCL_KERNEL(TYPE)                                      \
-  REGISTER_KERNEL_BUILDER(                                              \
-      Name("BitwiseXor").Device(DEVICE_SYCL).TypeConstraint<TYPE>("T"), \
-      BinaryOp<SYCLDevice, functor::bitwise_xor<TYPE>>);
-REGISTER_SYCL_KERNEL(int8);
-REGISTER_SYCL_KERNEL(int16);
-REGISTER_SYCL_KERNEL(int32);
-REGISTER_SYCL_KERNEL(int64);
-REGISTER_SYCL_KERNEL(uint8);
-REGISTER_SYCL_KERNEL(uint16);
-#undef REGISTER_SYCL_KERNEL
-
+REGISTER6(BinaryOp, SYCL, "BitwiseXor", functor::bitwise_xor, int8, int16, int32,
+          int64, uint8, uint16);
 #endif  // TENSORFLOW_USE_SYCL
 
 #if GOOGLE_CUDA

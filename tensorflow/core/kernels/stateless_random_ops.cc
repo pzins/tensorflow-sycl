@@ -140,7 +140,6 @@ TF_CALL_double(REGISTER);
           .Device(DEVICE_GPU)                                          \
           .HostMemory("shape")                                         \
           .HostMemory("seed")                                          \
-          .TypeConstraint<int32>("T")                                  \
           .TypeConstraint<TYPE>("dtype"),                              \
       StatelessRandomOp<GPUDevice, random::UniformDistribution<        \
                                        random::PhiloxRandom, TYPE> >); \
@@ -149,7 +148,6 @@ TF_CALL_double(REGISTER);
           .Device(DEVICE_GPU)                                          \
           .HostMemory("shape")                                         \
           .HostMemory("seed")                                          \
-          .TypeConstraint<int32>("T")                                  \
           .TypeConstraint<TYPE>("dtype"),                              \
       StatelessRandomOp<GPUDevice, random::NormalDistribution<         \
                                        random::PhiloxRandom, TYPE> >); \
@@ -158,7 +156,6 @@ TF_CALL_double(REGISTER);
           .Device(DEVICE_GPU)                                          \
           .HostMemory("shape")                                         \
           .HostMemory("seed")                                          \
-          .TypeConstraint<int32>("T")                                  \
           .TypeConstraint<TYPE>("dtype"),                              \
       StatelessRandomOp<                                               \
           GPUDevice,                                                   \

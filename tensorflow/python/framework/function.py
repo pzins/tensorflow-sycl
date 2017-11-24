@@ -100,7 +100,7 @@ class Defun(object):
          grad_func - (optional).  A function implementing the gradient
            of the function-to-register.  This is must be a
            `_DefinedFunction` object. The gradient
-           function must satisify the criterion defined in
+           function must satisfy the criterion defined in
            function.proto:GradientDef.
 
          python_grad_func - (optional).  A function implementing the
@@ -1002,6 +1002,8 @@ _DTYPE_TO_STR = {
     dtypes.int32: "i32",
     dtypes.uint8: "i8",
     dtypes.uint16: "u16",
+    dtypes.uint32: "u32",
+    dtypes.uint64: "u64",
     dtypes.int16: "i16",
     dtypes.int8: "i8",
     dtypes.string: "s",

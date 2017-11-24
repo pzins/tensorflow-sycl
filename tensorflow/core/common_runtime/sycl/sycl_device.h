@@ -36,9 +36,27 @@ class GSYCLInterface {
     bool found_device = false;
     auto device_list = Eigen::get_sycl_supported_devices();
     // Obtain list of supported devices from Eigen
+
+    AddDevicesIf(device_list, found_device, [](const cl::sycl::device& d) { return d.is_accelerator(); });
+    AddDevicesIf(device_list, found_device, [](const cl::sycl::device& d) { return d.is_gpu(); });
+
+    if (!found_device) {
+      // Currently Intel GPU is not supported
+      LOG(WARNING) << "No OpenCL accelerator nor GPU found that is supported by "
+                      "ComputeCpp/triSYCL trying OpenCL CPU";
+    }
+
+    AddDevicesIf(device_list, found_device, [](const cl::sycl::device d) { return d.is_cpu(); });
+
+    if (!found_device) {
+      LOG(WARNING) << "No OpenCL CPU found that is supported by "
+                   << "ComputeCpp/triSYCL, checking for host sycl device";
+    }
+
     for (const auto& device : device_list) {
-      if (device.is_gpu()) {
-        // returns first found GPU
+      // triSYCL only supports the host device for now
+      if (device.is_host()) {
+        LOG(WARNING) << "Found SYCL host device";
         AddDevice(device);
         found_device = true;
       }
@@ -46,22 +64,8 @@ class GSYCLInterface {
 
     if (!found_device) {
       // Currently Intel GPU is not supported
-      LOG(WARNING) << "No OpenCL GPU found that is supported by ComputeCpp, "
-                      "trying OpenCL CPU";
-    }
-
-    for (const auto& device : device_list) {
-      if (device.is_cpu()) {
-        // returns first found CPU
-        AddDevice(device);
-        found_device = true;
-      }
-    }
-
-    if (!found_device) {
-      // Currently Intel GPU is not supported
-      LOG(FATAL)
-          << "No OpenCL GPU nor CPU found that is supported by ComputeCpp";
+      LOG(FATAL) << "No SYCL host and no OpenCL device found that"
+                 << " is supported by ComputeCPP/triSYCL";
     } else {
       LOG(INFO) << "Found following OpenCL devices:";
       for (int i = 0; i < device_list.size(); i++) {
@@ -96,6 +100,16 @@ class GSYCLInterface {
       delete p;
     }
     m_queue_interface_.clear();
+  }
+
+  template <class Predicate>
+  void AddDevicesIf(const std::vector<cl::sycl::device>& device_list, bool& found_device, Predicate pred) {
+    for (const auto& device : device_list) {
+      if (pred(device)) {
+        AddDevice(device);
+        found_device = true;
+      }
+    }
   }
 
   void AddDevice(const cl::sycl::device& d) {

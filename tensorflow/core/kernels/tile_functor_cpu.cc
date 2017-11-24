@@ -15,10 +15,10 @@ limitations under the License.
 
 #define EIGEN_USE_THREADS
 
+#include "tensorflow/core/kernels/tile_functor.h"
 #include "tensorflow/core/framework/attr_value.pb.h"
 #include "tensorflow/core/framework/register_types.h"
 #include "tensorflow/core/kernels/ops_util.h"
-#include "tensorflow/core/kernels/tile_functor.h"
 
 namespace tensorflow {
 
@@ -69,7 +69,9 @@ struct TileFunctor<CPUDevice, T> {
 };
 
 // Register functors used for Tile functor.
-#define DEFINE_TYPE(T) template struct Tile<CPUDevice, T>;
+#define DEFINE_TYPE(T)                       \
+  template struct Tile<CPUDevice, T, int32>; \
+  template struct Tile<CPUDevice, T, int64>;
 
 TF_CALL_bool(DEFINE_TYPE);
 TF_CALL_float(DEFINE_TYPE);
@@ -167,7 +169,9 @@ struct TileFunctor<SYCLDevice, T> {
   }
 };
 
-#define DEFINE_TYPE(T) template struct Tile<SYCLDevice, T>;
+#define DEFINE_TYPE(T)                        \
+  template struct Tile<SYCLDevice, T, int32>; \
+  template struct Tile<SYCLDevice, T, int64>;
 
 TF_CALL_bool(DEFINE_TYPE);
 TF_CALL_float(DEFINE_TYPE);
