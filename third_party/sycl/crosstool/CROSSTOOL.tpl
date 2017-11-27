@@ -24,13 +24,6 @@ toolchain {
   compiler: "compiler"
   host_system_name: "local"
   needsPic: true
-  supports_gold_linker: false
-  supports_incremental_linker: false
-  supports_fission: false
-  supports_interface_shared_objects: false
-  supports_normalizing_ar: false
-  supports_start_end_lib: false
-  supports_thin_archives: false
   target_libc: "local"
   target_cpu: "local"
   target_system_name: "local"
@@ -91,9 +84,6 @@ toolchain {
 
   # All warnings are enabled. Maybe enable -Werror as well?
   compiler_flag: "-Wall"
-
-  # Enable SSE instructions by default
-  compiler_flag: "-msse3"
 
   # Anticipated future default.
   linker_flag: "-Wl,-no-as-needed"

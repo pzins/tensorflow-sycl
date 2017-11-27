@@ -1046,7 +1046,6 @@ def main():
   if environ_cp.get('TF_NEED_OPENCL_SYCL') == '1':
     set_host_cxx_compiler(environ_cp)
     set_host_c_compiler(environ_cp)
-    set_action_env_var(environ_cp, 'TF_VECTORIZE_SYCL', 'SYCL Vectorization', False)
     set_action_env_var(environ_cp, 'TF_NEED_COMPUTECPP', 'ComputeCPP', True)
     if environ_cp.get('TF_NEED_COMPUTECPP') == '1':
       set_computecpp_toolkit_path(environ_cp)
