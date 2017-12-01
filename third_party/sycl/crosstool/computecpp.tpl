@@ -134,7 +134,7 @@ def isDriverSupported():
   outputList = check_output([COMPUTECPP_DRIVER, '--version']).split(" ")
   cppVersionList = outputList[5].split(".")
 
-  if((cppVersionList[0] == 0 and cppVersionList[1] >= 5) or cppVersionList[0] > 0):
+  if((int(cppVersionList[0]) == 0 and int(cppVersionList[1]) >= 5) or int(cppVersionList[0]) > 0):
     return True
 
   return False
