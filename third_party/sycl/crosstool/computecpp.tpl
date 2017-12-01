@@ -132,7 +132,7 @@ def add_sycl_env_vars_to_flags(flags):
 
 def isDriverSupported():
   outputList = check_output([COMPUTECPP_DRIVER, '--version']).split(" ")
-  cppVersionList = outputList[4].split(" ")
+  cppVersionList = outputList[5].split(".")
 
   if((cppVersionList[0] == 0 and cppVersionList[1] >= 5) or cppVersionList[0] > 0):
     return True
