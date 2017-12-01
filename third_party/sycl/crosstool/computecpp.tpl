@@ -114,7 +114,7 @@ def get_device_compiler_flags_legacy(compiler_flags):
   ]
   return computecpp_flags + remove_unknown_computecpp_flags(compiler_flags)
 
-def add_sycl_env_vars_to_flags(flags):
+def add_sycl_env_vars_to_flags_legacy(flags):
   """Add required env vars to compiler flags as needed for ComputeCpp."""
   extra_env_vars = [
       '-DTENSORFLOW_USE_SYCL=1',
@@ -130,9 +130,25 @@ def add_sycl_env_vars_to_flags(flags):
 
   return flags + extra_env_vars
 
+def get_host_compiler_flags_legacy(compiler_flags, bc_out):
+  """Remove device compiler specific flags and set up the host compiler flags."""
+  device_flag_prefixes = ('-MF', '-MD',)
+  host_compiler_flags = [flag for flag in compiler_flags if (not flag.startswith(device_flag_prefixes) and not '.d' in flag)]
+  host_compiler_flags[host_compiler_flags.index('-c')] = "--include"
+  host_compiler_flags = [
+      '-DEIGEN_HAS_C99_MATH',
+      '-xc++',
+      '-Wno-unused-variable',
+      '-I', COMPUTECPP_INCLUDE,
+      '-c', bc_out
+  ] + host_compiler_flags
+  return host_compiler_flags
+
 def isDriverSupported():
   outputList = check_output([COMPUTECPP_DRIVER, '--version']).split(" ")
-  cppVersionList = outputList[5].split(".")
+  ccpp_version_idx = outputList.index('Device') - 1
+
+  cppVersionList = outputList[ccpp_version_idx].split(".")
 
   if((int(cppVersionList[0]) == 0 and int(cppVersionList[1]) >= 5) or int(cppVersionList[0]) > 0):
     return True
@@ -162,7 +178,7 @@ def useLegacy(output_file_index, output_file_name, compiler_flags):
 
   x = call([COMPUTECPP_DRIVER] + computecpp_device_compiler_flags)
   if x == 0:
-    host_compiler_flags = get_host_compiler_flags(compiler_flags, bc_out)
+    host_compiler_flags = get_host_compiler_flags_legacy(compiler_flags, bc_out)
     x = call([CPU_CXX_COMPILER] + host_compiler_flags)
 
   return x
