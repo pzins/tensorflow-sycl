@@ -499,98 +499,8 @@ class MatMulOp : public OpKernel {
       f(ctx->eigen_device<Device>(), out->flat<T>());
       return;
     }
-#ifdef ARM_COMPUTE_CL
-    arm_compute::CLScheduler::get().default_init();
-    arm_compute::CLGEMM arm_gemm;
-    arm_compute::CLTensor arm_a, arm_b, arm_out;
-
-    const arm_compute::TensorShape
-          shape_a{a.dim_size(0), a.dim_size(1)},
-          shape_b{b.dim_size(0), b.dim_size(1)},
-          shape_out{out_shape.dim_size(0), out_shape.dim_size(1)};
-
-    arm_a.allocator()->init(arm_compute::TensorInfo(shape_a, 1, arm_compute::DataType::F32));
-    arm_b.allocator()->init(arm_compute::TensorInfo(shape_b, 1, arm_compute::DataType::F32));
-    arm_out.allocator()->init(arm_compute::TensorInfo(shape_out, 1, arm_compute::DataType::F32));
-    arm_a.allocator()->allocate();
-    arm_b.allocator()->allocate();
-    arm_out.allocator()->allocate();
-
-    auto fill_with_window =
-      [](const Tensor& tf_tensor, arm_compute::CLTensor& arm_tensor) {
-        arm_tensor.map(true);
-        auto tensor_flat = tf_tensor.flat<T>();
-        arm_compute::Window win;
-        win.use_tensor_dimensions(arm_tensor.info()->tensor_shape());
-        arm_compute::Iterator it(&arm_tensor, win);
-        arm_compute::execute_window_loop(win, [&] (arm_compute::Coordinates& c) {
-          auto row = c.y(), col = c.x();
-          *reinterpret_cast<T*>(it.ptr()) =
-            tensor_flat.data()[row * tf_tensor.shape().dim_size(0) + col];
-        }, it);
-        arm_tensor.unmap();
-    };
-
-    auto do_transpose = [](arm_compute::CLTensor& in, arm_compute::CLTensor& out) {
-      arm_compute::CLTranspose arm_transpose;
-      arm_transpose.configure(&in, &out);
-      arm_transpose.run();
-    };
-
-    if(!transpose_a_) {
-      arm_compute::TensorShape shape_temp{a.dim_size(1), a.dim_size(0)};
-      arm_compute::CLTensor temp;
-      temp.allocator()->init(arm_compute::TensorInfo(shape_temp, 1, arm_compute::DataType::F32));
-      temp.allocator()->allocate();
-      do_transpose(arm_a, temp);
-      arm_compute::CLScheduler::get().sync();
-      arm_a.allocator()->free();
-      arm_a = std::move(temp);
-    }
-
-    if(!transpose_b_) {
-      arm_compute::TensorShape shape_temp{b.dim_size(1), b.dim_size(0)};
-      arm_compute::CLTensor temp;
-      temp.allocator()->init(arm_compute::TensorInfo(shape_temp, 1, arm_compute::DataType::F32));
-      temp.allocator()->allocate();
-      do_transpose(arm_b, temp);
-      arm_compute::CLScheduler::get().sync();
-      arm_b.allocator()->free();
-      arm_b = std::move(temp);
-    }
-
-    fill_with_window(a, arm_a); fill_with_window(b, arm_b);
-    arm_gemm.configure(&arm_a, &arm_b, nullptr, &arm_out, 1.0f, 1.0f);
-    arm_gemm.run();
-
-    {
-      arm_compute::CLScheduler::get().sync();
-      arm_compute::CLTensor temp;
-      arm_compute::TensorShape shape_temp{out->dim_size(1), out->dim_size(0)};
-      temp.allocator()->init(arm_compute::TensorInfo(shape_temp, 1, arm_compute::DataType::F32));
-      temp.allocator()->allocate();
-      do_transpose(arm_out, temp);
-      arm_compute::CLScheduler::get().sync();
-      arm_out.allocator()->free();
-      arm_out = std::move(temp);
-      arm_compute::Window out_win;
-      out_win.use_tensor_dimensions(arm_out.info()->tensor_shape());
-      arm_out.map(true);
-      arm_compute::Iterator out_it(&arm_out, out_win);
-      auto eigen_out = out->flat<T>();
-      arm_compute::execute_window_loop(out_win, [&] (arm_compute::Coordinates& c) {
-        eigen_out.data()[c.y() * out->shape().dim_size(0) + c.x()] =
-            *reinterpret_cast<float*>(out_it.ptr());
-      }, out_it);
-      arm_out.unmap();
-    }
-    arm_a.allocator()->free();
-    arm_b.allocator()->free();
-    arm_out.allocator()->free();
-#else
     LaunchMatMul<Device, T, USE_CUBLAS>::launch(
         ctx, a, b, dim_pair, &algorithms_, use_autotune_, out);
-#endif  // ARM_COMPUTE_CL
   }
 
  private:
@@ -600,6 +510,151 @@ class MatMulOp : public OpKernel {
   bool transpose_a_;
   bool transpose_b_;
 };
+
+
+#ifdef ARM_COMPUTE_CL
+template <>
+class MatMulOp<CPUDevice, float, false> : public OpKernel {
+ public:
+  explicit MatMulOp(OpKernelConstruction* ctx)
+      : OpKernel(ctx) {
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("transpose_a", &transpose_a_));
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("transpose_b", &transpose_b_));
+  }
+
+  void Compute(OpKernelContext* ctx) override {
+    const Tensor& a = ctx->input(0);
+    const Tensor& b = ctx->input(1);
+
+    // Check that the dimensions of the two matrices are valid.
+    OP_REQUIRES(ctx, TensorShapeUtils::IsMatrix(a.shape()),
+                errors::InvalidArgument("In[0] is not a matrix"));
+    OP_REQUIRES(ctx, TensorShapeUtils::IsMatrix(b.shape()),
+                errors::InvalidArgument("In[1] is not a matrix"));
+    Eigen::array<Eigen::IndexPair<Eigen::DenseIndex>, 1> dim_pair;
+    dim_pair[0].first = transpose_a_ ? 0 : 1;
+    dim_pair[0].second = transpose_b_ ? 1 : 0;
+
+    OP_REQUIRES(
+        ctx, a.dim_size(dim_pair[0].first) == b.dim_size(dim_pair[0].second),
+        errors::InvalidArgument(
+            "Matrix size-incompatible: In[0]: ", a.shape().DebugString(),
+            ", In[1]: ", b.shape().DebugString()));
+    int a_dim_remaining = 1 - dim_pair[0].first;
+    int b_dim_remaining = 1 - dim_pair[0].second;
+    TensorShape out_shape(
+        {a.dim_size(a_dim_remaining), b.dim_size(b_dim_remaining)});
+    Tensor* out = nullptr;
+    OP_REQUIRES_OK(ctx, ctx->allocate_output(0, out_shape, &out));
+
+    if (out->NumElements() == 0) {
+      // If a has shape [0, x] or b has shape [x, 0], the output shape
+      // is a 0-element matrix, so there is nothing to do.
+      return;
+    }
+
+    if (a.NumElements() == 0 || b.NumElements() == 0) {
+      // If a has shape [x, 0] and b has shape [0, y], the
+      // output shape is [x, y] where x and y are non-zero, so we fill
+      // the output with zeros.
+      functor::SetZeroFunctor<CPUDevice, float> f;
+      f(ctx->eigen_device<CPUDevice>(), out->flat<float>());
+      return;
+    }
+
+    arm_compute::CLScheduler::get().default_init();
+    arm_compute::CLGEMM arm_gemm;
+    arm_compute::CLTensor arm_out;
+
+    const arm_compute::TensorShape
+          shape_a{a.dim_size(0), a.dim_size(1)},
+          shape_b{b.dim_size(0), b.dim_size(1)},
+          shape_out{out->dim_size(0), out->dim_size(1)};
+
+    auto fill_with_window =
+      [](const Tensor& tf_tensor, arm_compute::CLTensor& arm_tensor, bool transpose = false) {
+        arm_tensor.map(true);
+        auto flat = tf_tensor.flat<float>().data();
+        arm_compute::Window win;
+        win.use_tensor_dimensions(arm_tensor.info()->tensor_shape());
+        arm_compute::Iterator it(&arm_tensor, win);
+        if(transpose) {
+          arm_compute::execute_window_loop(win, [&] (arm_compute::Coordinates& c) {
+            auto row = c.y(), col = c.x();
+            *reinterpret_cast<float*>(it.ptr()) =
+              flat[col * tf_tensor.shape().dim_size(1) + row];
+          }, it);
+        } else {
+          arm_compute::execute_window_loop(win, [&] (arm_compute::Coordinates& c) {
+            auto row = c.y(), col = c.x();
+            *reinterpret_cast<float*>(it.ptr()) =
+              flat[row * tf_tensor.shape().dim_size(0) + col];
+          }, it);
+        }
+        arm_tensor.unmap();
+    };
+
+    arm_compute::CLTensor arm_a;
+    if(transpose_a_) {
+      arm_compute::TensorShape shape_temp{a.dim_size(1), a.dim_size(0)};
+      arm_a.allocator()->init(arm_compute::TensorInfo(shape_temp, 1, arm_compute::DataType::F32));
+    } else {
+      arm_compute::TensorShape shape_temp{a.dim_size(0), a.dim_size(1)};
+      arm_a.allocator()->init(arm_compute::TensorInfo(shape_temp, 1, arm_compute::DataType::F32));
+    }
+
+    arm_compute::CLTensor arm_b;
+    if(transpose_b_) {
+      arm_compute::TensorShape shape_temp{b.dim_size(1), b.dim_size(0)};
+      arm_b.allocator()->init(arm_compute::TensorInfo(shape_temp, 1, arm_compute::DataType::F32));
+    } else {
+      arm_compute::TensorShape shape_temp{b.dim_size(0), b.dim_size(1)};
+      arm_b.allocator()->init(arm_compute::TensorInfo(shape_temp, 1, arm_compute::DataType::F32));
+    }
+
+    arm_out.allocator()->init(arm_compute::TensorInfo(shape_out, 1, arm_compute::DataType::F32));
+
+    arm_gemm.configure(&arm_a, &arm_b, nullptr, &arm_out, 1.0f, 1.0f);
+
+    arm_a.allocator()->allocate();
+    arm_b.allocator()->allocate();
+    arm_out.allocator()->allocate();
+
+    if(transpose_a_) {
+      fill_with_window(a, arm_a, true);
+    } else {
+      fill_with_window(a, arm_a);
+    }
+    if(transpose_b_) {
+      fill_with_window(b, arm_b, true);
+    } else {
+      fill_with_window(b, arm_b);
+    }
+
+    arm_gemm.run();
+    arm_compute::CLScheduler::get().sync();
+
+    arm_compute::Window out_win;
+    out_win.use_tensor_dimensions(arm_out.info()->tensor_shape());
+    arm_out.map(true);
+    arm_compute::Iterator out_it(&arm_out, out_win);
+    auto eigen_out = out->flat<float>();
+    arm_compute::execute_window_loop(out_win, [&] (arm_compute::Coordinates& c) {
+     eigen_out.data()[c.y() * out->shape().dim_size(0) + c.x()] =
+         *reinterpret_cast<float*>(out_it.ptr());
+    }, out_it);
+    arm_out.unmap();
+
+    arm_a.allocator()->free();
+    arm_b.allocator()->free();
+    arm_out.allocator()->free();
+  }
+
+ private:
+  bool transpose_a_;
+  bool transpose_b_;
+};
+#endif  // ARM_COMPUTE_CL
 
 namespace functor {
 
@@ -657,8 +712,8 @@ TF_CALL_half(REGISTER_CPU);
 TF_CALL_int32(REGISTER_CPU);
 #else
 TF_CALL_float(REGISTER_CPU);
-TF_CALL_double(REGISTER_CPU);
 #ifndef ARM_COMPUTE_CL
+TF_CALL_double(REGISTER_CPU);
 TF_CALL_half(REGISTER_CPU);
 #endif  // ARM_COMPUTE_CL
 
