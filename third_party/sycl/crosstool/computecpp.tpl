@@ -1,9 +1,11 @@
 #!/usr/bin/env python
 
+from __future__ import print_function
+
 import os
 import sys
 import tempfile
-from subprocess import call, Popen, PIPE
+from subprocess import call, Popen, PIPE, check_output
 
 CPU_CXX_COMPILER = ('%{host_cxx_compiler}')
 CPU_C_COMPILER = ('%{host_c_compiler}')
@@ -130,6 +132,14 @@ def get_host_compiler_flags(compiler_flags, bc_out):
   return host_compiler_flags
 
 def main():
+  outputList = check_output([COMPUTECPP_DRIVER, '--version']).split(" ")
+  cpp_version = outputList[outputList.index('Device') - 1];
+  cppVersionList = cpp_version.split(".")
+  if int(cppVersionList[0]) == 0 and int(cppVersionList[1]) < 5:
+    print("Error: ComputeCpp {} is not compatible with the current version of Tensorflow, "
+          "please update to the latest version of ComputeCpp".format(cpp_version), file=sys.stderr)
+    return 1
+
   compiler_flags = clean_passed_in_flags()
 
   output_file_index = compiler_flags.index('-o') + 1
