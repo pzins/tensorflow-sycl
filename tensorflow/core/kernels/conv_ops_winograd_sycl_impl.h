@@ -6,7 +6,7 @@
 #define TENSORFLOW_KERNELS_CONV_OPS_WINOGRAD_SYCL_IMPL_H_
 
 namespace tensorflow {
-namespace functor {
+namespace winograd {
 /**
  * For any Winograd tiling you wish to implement, ensure that the following
  * three specialisations are completed:
@@ -447,6 +447,6 @@ struct OutputTile<T, 3, 3, 2, 2> final : public BaseOutputTile<T, 3, 3, 2, 2> {
                  tile.data[3][1] + tile.data[3][2] + tile.data[3][3];
   }
 };
-}  // namespace functor
+}  // namespace winograd
 }  // namespace tensorflow
 #endif  // TENSORFLOW_KERNELS_CONV_OPS_WINOGRAD_SYCL_IMPL_H_
