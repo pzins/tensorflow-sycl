@@ -103,7 +103,7 @@ if [[ "${CONTAINER_TYPE}" != "gpu" ]] && [[ "${CONTAINER_TYPE}" != "gpu_clang" ]
   GPU_EXTRA_PARAMS=""
 fi
 
-if [[ "${CONTAINER_TYPE}" != "sycl" ]]; then
+if [[ "${CONTAINER_TYPE}" == "sycl" ]]; then
   GPU_EXTRA_PARAMS="--device /dev/dri:/dev/dri"
 fi
 
