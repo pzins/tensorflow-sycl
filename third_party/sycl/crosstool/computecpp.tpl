@@ -67,7 +67,7 @@ def get_device_compiler_flags(compiler_flags):
   return compiler_flags + computecpp_flags
 
 def checkComputeCppIsSupported():
-  outputList = check_output([COMPUTECPP_DRIVER, '--version']).split(" ")
+  outputList = check_output([COMPUTECPP_DRIVER, '--version']).decode('utf-8').split(" ")
   ccpp_version_idx = outputList.index('Device') - 1
   cpp_version = outputList[ccpp_version_idx];
   cppVersionList = cpp_version.split(".")
