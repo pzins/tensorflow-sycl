@@ -53,7 +53,7 @@ toolchain {
   cxx_builtin_include_directory: "/usr/local/include"
   cxx_builtin_include_directory: "/usr/include"
 
-  cxx_builtin_include_directory: "%{computecpp_toolkit_path}"
+  cxx_builtin_include_directory: "%{sycl_include_dir}"
   cxx_builtin_include_directory: "%{python_lib_path}"
 
   tool_path { name: "gcov" path: "/usr/bin/gcov" }
