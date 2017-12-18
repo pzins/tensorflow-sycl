@@ -188,13 +188,15 @@ def _sycl_autoconf_imp(repository_ctx):
     _file(repository_ctx, "sycl:LICENSE.text")
 
     if _enable_compute_cpp(repository_ctx):
+      computecpp_root = find_computecpp_root(repository_ctx);
+
       _tpl(repository_ctx, "crosstool:computecpp",
       {
         "%{host_cxx_compiler}" : find_cc(repository_ctx),
-        "%{host_c_compiler}" : find_c(repository_ctx)
+        "%{host_c_compiler}" : find_c(repository_ctx),
+        "%{computecpp_root}"  : computecpp_root,
       })
 
-      computecpp_root = find_computecpp_root(repository_ctx);
       _check_dir(repository_ctx, computecpp_root)
 
       _tpl(repository_ctx, "crosstool:CROSSTOOL",
