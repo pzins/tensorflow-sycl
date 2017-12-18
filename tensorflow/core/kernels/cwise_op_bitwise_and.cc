@@ -16,17 +16,19 @@ limitations under the License.
 #include "tensorflow/core/kernels/cwise_ops_common.h"
 
 namespace tensorflow {
-REGISTER6(BinaryOp, CPU, "BitwiseAnd", functor::bitwise_and, int8, int16, int32,
-          int64, uint8, uint16);
+REGISTER8(BinaryOp, CPU, "BitwiseAnd", functor::bitwise_and, int8, int16, int32,
+          int64, uint8, uint16, uint32, uint64);
 
 #if TENSORFLOW_USE_SYCL
 REGISTER6(BinaryOp, SYCL, "BitwiseAnd", functor::bitwise_and, int8, int16, int32,
           int64, uint8, uint16);
+REGISTER_SYCL_KERNEL(uint32);
+REGISTER_SYCL_KERNEL(uint64);
 #endif  // TENSORFLOW_USE_SYCL
 
 #if GOOGLE_CUDA
-REGISTER6(BinaryOp, GPU, "BitwiseAnd", functor::bitwise_and, int8, int16, int32,
-          int64, uint8, uint16);
+REGISTER8(BinaryOp, GPU, "BitwiseAnd", functor::bitwise_and, int8, int16, int32,
+          int64, uint8, uint16, uint32, uint64);
 #endif  // GOOGLE_CUDA
 
 }  // namespace tensorflow

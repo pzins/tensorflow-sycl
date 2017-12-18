@@ -364,17 +364,10 @@ config_setting(
     visibility = ["//visibility:public"],
 )
 
-# Make a dummy rule that we can change "default" in select statements to.
-# to disable dependencies in copybara.
-config_setting(
-    name = "dummy_disabled_internal",
-    values = {"define": "with_dummy_disabled_internal=true"},
-    visibility = ["//visibility:public"],
-)
-
 package_group(
     name = "internal",
     packages = [
+        "//learning/meta_rank/...",
         "//tensorflow/...",
         "//tensorflow_fold/llgtm/...",
     ],
@@ -461,6 +454,7 @@ filegroup(
         "//tensorflow/contrib/data/python/ops:all_files",
         "//tensorflow/contrib/decision_trees/proto:all_files",
         "//tensorflow/contrib/distributions:all_files",
+        "//tensorflow/contrib/eager/proto:all_files",
         "//tensorflow/contrib/eager/python:all_files",
         "//tensorflow/contrib/estimator:all_files",
         "//tensorflow/contrib/factorization:all_files",
@@ -561,6 +555,7 @@ filegroup(
         "//tensorflow/contrib/timeseries/python/timeseries/state_space_models:all_files",
         "//tensorflow/contrib/tpu:all_files",
         "//tensorflow/contrib/tpu/profiler:all_files",
+        "//tensorflow/contrib/tpu/proto:all_files",
         "//tensorflow/contrib/training:all_files",
         "//tensorflow/contrib/util:all_files",
         "//tensorflow/contrib/verbs:all_files",
@@ -608,6 +603,7 @@ filegroup(
         "//tensorflow/java/src/main/native:all_files",
         "//tensorflow/python:all_files",
         "//tensorflow/python/data:all_files",
+        "//tensorflow/python/data/kernel_tests:all_files",
         "//tensorflow/python/data/ops:all_files",
         "//tensorflow/python/data/util:all_files",
         "//tensorflow/python/debug:all_files",
@@ -644,6 +640,7 @@ filegroup(
         "//tensorflow/tools/test:all_files",
         "//tensorflow/user_ops:all_files",
         "//third_party/hadoop:all_files",
+        "//third_party/mpi:all_files",
         "//third_party/sycl:all_files",
         "//third_party/sycl/sycl:all_files",
     ],

@@ -31,6 +31,7 @@ gen_zipped_test_files(
         "local_response_norm.zip",
         "max_pool.zip",
         "mul.zip",
+        "pad.zip",
         "relu.zip",
         "relu1.zip",
         "relu6.zip",
@@ -160,6 +161,12 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "util",
+    testonly = 1,
+    hdrs = ["util.h"],
+)
+
 cc_test(
     name = "test_runner_test",
     srcs = ["test_runner_test.cc"],
@@ -187,6 +194,7 @@ tf_cc_test(
     srcs = ["generated_examples_zip_test.cc"],
     data = [":optest"],
     shard_count = 10,
+    tags = ["no_oss"],
     deps = [
         ":parse_testdata_lib",
         "//tensorflow/contrib/lite:builtin_op_data",

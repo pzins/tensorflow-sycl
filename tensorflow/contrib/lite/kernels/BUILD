@@ -32,6 +32,7 @@ cc_library(
         "//tensorflow/contrib/lite:framework",
         "//tensorflow/contrib/lite:schema_fbs_version",
         "//tensorflow/contrib/lite:string_util",
+        "//tensorflow/contrib/lite/testing:util",
         "//tensorflow/core:lib",
         "@com_google_googletest//:gtest",
     ],
@@ -89,6 +90,7 @@ cc_library(
         "lsh_projection.cc",
         "lstm.cc",
         "mul.cc",
+        "pad.cc",
         "pooling.cc",
         "register.cc",
         "reshape.cc",
@@ -216,6 +218,18 @@ tf_cc_test(
     name = "mul_test",
     size = "small",
     srcs = ["mul_test.cc"],
+    deps = [
+        ":builtin_ops",
+        "//tensorflow/contrib/lite:framework",
+        "//tensorflow/contrib/lite/kernels:test_util",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+tf_cc_test(
+    name = "pad_test",
+    size = "small",
+    srcs = ["pad_test.cc"],
     deps = [
         ":builtin_ops",
         "//tensorflow/contrib/lite:framework",

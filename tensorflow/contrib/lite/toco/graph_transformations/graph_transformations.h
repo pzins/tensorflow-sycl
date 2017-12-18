@@ -108,10 +108,11 @@ void RunGraphTransformations(Model* model, const string& message,
   class GTName : public GraphTransformation {              \
    public:                                                 \
     bool Run(Model* model, std::size_t op_index) override; \
-    const char* Name() const { return #GTName; }           \
+    const char* Name() const override { return #GTName; }  \
   };
 
 // List of all graph transformations
+DECLARE_GRAPH_TRANSFORMATION(ConvertExpandDimsToReshape)
 DECLARE_GRAPH_TRANSFORMATION(ConvertPureConvToDepthwise)
 DECLARE_GRAPH_TRANSFORMATION(EnsureBiasVectors)
 DECLARE_GRAPH_TRANSFORMATION(FuseActivationFunctions)
