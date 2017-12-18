@@ -6446,7 +6446,7 @@ cc_library(
         "cwise_ops_gradients.h",
         "meta_support.h",
         "quantization_utils.h",
-    ],
+    ] + if_sycl(["cwise_ops_sycl_common.h"]),
     deps = [
         ":bounds_check",
         "//tensorflow/core:framework",
