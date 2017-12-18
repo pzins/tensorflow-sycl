@@ -164,9 +164,9 @@ def tf_workspace(path_prefix="", tf_repo_name=""):
   acl_repository(
       name = "acl",
       urls = [
-          "https://github.com/lukeiwanski/ComputeLibrary/archive/feature/no_exceptions.zip",
+          "https://github.com/lukeiwanski/ComputeLibrary/archive/a8ed1ecb016b4c32af14c560f638e03aae0f48b8.tar.gz",
       ],
-      strip_prefix = "ComputeLibrary-feature-no_exceptions",
+      strip_prefix = "ComputeLibrary-a8ed1ecb016b4c32af14c560f638e03aae0f48b8",
       build_file = str(Label("//third_party/acl:acl.BUILD")),
       repository = tf_repo_name,
   )
@@ -199,11 +199,11 @@ def tf_workspace(path_prefix="", tf_repo_name=""):
   native.new_http_archive(
       name = "eigen_archive",
       urls = [
-          #"http://mirror.bazel.build/bitbucket.org/eigen/eigen/get/a61cbe42af5b.tar.gz",
-          "https://bitbucket.org/mehdi_goli/opencl/get/0f66d0b9b580.tar.gz",
+          #"http://mirror.bazel.build/bitbucket.org/eigen/eigen/get/c484b7bc76d5.tar.gz",
+          "https://bitbucket.org/mehdi_goli/opencl/get/8e8bc4c3efee.tar.gz",
       ],
       #sha256 = "ca7beac153d4059c02c8fc59816c82d54ea47fe58365e8aded4082ded0b820c4",
-      strip_prefix = "mehdi_goli-opencl-0f66d0b9b580",
+      strip_prefix = "mehdi_goli-opencl-8e8bc4c3efee",
       build_file = str(Label("//third_party:eigen.BUILD")),
   )
 
