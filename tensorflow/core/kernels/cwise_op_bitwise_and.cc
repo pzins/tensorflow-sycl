@@ -20,10 +20,8 @@ REGISTER8(BinaryOp, CPU, "BitwiseAnd", functor::bitwise_and, int8, int16, int32,
           int64, uint8, uint16, uint32, uint64);
 
 #if TENSORFLOW_USE_SYCL
-REGISTER6(BinaryOp, SYCL, "BitwiseAnd", functor::bitwise_and, int8, int16, int32,
-          int64, uint8, uint16);
-REGISTER_SYCL_KERNEL(uint32);
-REGISTER_SYCL_KERNEL(uint64);
+REGISTER8(BinaryOp, SYCL, "BitwiseAnd", functor::bitwise_and, int8, int16, int32,
+          int64, uint8, uint16, uint32, uint64);
 #endif  // TENSORFLOW_USE_SYCL
 
 #if GOOGLE_CUDA
