@@ -1238,6 +1238,14 @@ StatusOr<ComputationDataHandle> UserComputation::AddCustomCallInstruction(
     TF_RETURN_IF_ERROR(LookUpRequest(handle).status());
   }
 
+  if (tensorflow::StringPiece(custom_call_request.call_target_name())
+          .starts_with("$")) {
+    return InvalidArgument(
+        "Invalid custom_call_target \"%s\": Call targets that start with '$' "
+        "are reserved for internal use.",
+        custom_call_request.call_target_name().c_str());
+  }
+
   const ComputationDataHandle handle = CreateComputationDataHandle();
 
   OperationRequest& request =
@@ -1506,7 +1514,7 @@ StatusOr<const OperationRequest*> LookUpRequest(
   return &session_computation.requests().at(handle_value);
 }
 
-// Returns the OperationRequestion corresponding to the root (result) of the
+// Returns the OperationRequest corresponding to the root (result) of the
 // session computation.
 StatusOr<const OperationRequest*> GetRoot(
     VersionedComputationHandle::Version version,
