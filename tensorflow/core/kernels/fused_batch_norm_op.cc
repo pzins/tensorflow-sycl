@@ -598,18 +598,32 @@ class FusedBatchNormOp : public OpKernel {
 namespace {
 
 template <typename Device>
-void FillZeros(Tensor* t);
+void FillZeros(const Device& d, Tensor* t);
 
 #if GOOGLE_CUDA
 template <>
-void FillZeros<GPUDevice>(Tensor* t) {
+void FillZeros<GPUDevice>(const GPUDevice& d, Tensor* t) {
   cudaMemset(const_cast<char*>(t->tensor_data().data()), 0,
              t->tensor_data().size());
 }
 #endif
 
+#ifdef TENSORFLOW_USE_SYCL
 template <>
-void FillZeros<CPUDevice>(Tensor* t) {
+void FillZeros<SYCLDevice>(const SYCLDevice& d, Tensor* t) {
+  auto buffer = d.get_sycl_buffer(t->tensor_data().data());
+
+  d.sycl_queue().submit([&](cl::sycl::handler& cgh) {
+    auto access =
+        buffer.template get_access<cl::sycl::access::mode::write>(cgh);
+    const unsigned char val = 0;
+    cgh.fill(access, val);
+  });
+}
+#endif  // TENSORFLOW_USE_SYCL
+
+template <>
+void FillZeros<CPUDevice>(const CPUDevice& d, Tensor* t) {
   memset(const_cast<char*>(t->tensor_data().data()), 0,
          t->tensor_data().size());
 }
@@ -643,6 +657,8 @@ class FusedBatchNormGradOp : public OpKernel {
     // The Eigen implementation saves variance in the forward pass, while cuDNN
     // saves inverted variance.
     const Tensor& saved_maybe_inv_var_or_pop_var = context->input(4);
+
+    Device dev = context->eigen_device<Device>();
 
     OP_REQUIRES(context, y_backprop.dims() == 4,
                 errors::InvalidArgument("input must be 4-dimensional",
@@ -679,17 +695,17 @@ class FusedBatchNormGradOp : public OpKernel {
     Tensor* placeholder_1 = nullptr;
     OP_REQUIRES_OK(
         context, context->allocate_output(3, TensorShape({}), &placeholder_1));
-    FillZeros<Device>(placeholder_1);
+    FillZeros<Device>(dev, placeholder_1);
     Tensor* placeholder_2 = nullptr;
     OP_REQUIRES_OK(
         context, context->allocate_output(4, TensorShape({}), &placeholder_2));
-    FillZeros<Device>(placeholder_2);
+    FillZeros<Device>(dev, placeholder_2);
 
     // If input is empty, set gradients w.r.t scale/offset to zero.
     if (x.shape().num_elements() == 0) {
       functor::SetZeroFunctor<Device, U> f;
-      f(context->eigen_device<Device>(), scale_backprop->flat<U>());
-      f(context->eigen_device<Device>(), offset_backprop->flat<U>());
+      f(dev, scale_backprop->flat<U>());
+      f(dev, offset_backprop->flat<U>());
       return;
     }
 
@@ -713,7 +729,7 @@ class FusedBatchNormGradOp : public OpKernel {
                      context->allocate_temp(DataTypeToEnum<U>::value,
                                             scale_offset_shape, &scratch2));
       functor::FusedBatchNormFreezeGrad<Device, T, U>()(
-          context->eigen_device<Device>(), y_backprop, x, scale,
+          dev, y_backprop, x, scale,
           saved_mean_or_pop_mean, saved_maybe_inv_var_or_pop_var, epsilon_,
           x_backprop, scale_backprop, offset_backprop, scratch1.vec<U>(),
           scratch2.vec<U>());
