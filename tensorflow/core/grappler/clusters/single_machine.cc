@@ -44,9 +44,17 @@ SingleMachine::SingleMachine(int timeout_s, int num_cpu_cores, int num_gpus)
       Env::Default(), SanitizeThreadSuffix("single_machine"), 2));
 
   (*options_.config.mutable_device_count())["CPU"] = 1;
+#if GOOGLE_CUDA
   if (num_gpus > 0) {
     (*options_.config.mutable_device_count())["GPU"] = num_gpus;
   }
+#endif  // GOOGLE_CUDA
+
+#ifdef TENSORFLOW_USE_SYCL
+if (num_gpus > 0) {
+  (*options_.config.mutable_device_count())["SYCL"] = num_gpus;
+}
+#endif  // TENSORFLOW_USE_SYCL
   CHECK_GE(num_cpu_cores, 1);
   options_.config.set_intra_op_parallelism_threads(num_cpu_cores);
   // Create a session specific thread pool to ensure the threads are reset when
@@ -83,8 +91,14 @@ Status SingleMachine::Provision() {
 
   VLOG(1) << "Number of GPUs: " << num_gpus_;
   for (int i = 0; i < num_gpus_; ++i) {
+#if GOOGLE_CUDA
     string device_name =
         strings::StrCat("/job:localhost/replica:0/task:0/device:GPU:", i);
+#endif  // GOOGLE_CUDA
+#ifdef TENSORFLOW_USE_SYCL
+    string device_name =
+        strings::StrCat("/job:localhost/replica:0/task:0/device:SYCL:", i);
+#endif  // TENSORFLOW_USE_SYCL
     VLOG(1) << "Adding GPU device " << device_name;
     devices_[device_name] = GetLocalGPUInfo(i);
   }
