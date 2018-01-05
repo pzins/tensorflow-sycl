@@ -94,7 +94,6 @@ struct FusedBatchNorm {
 
     auto x_rest_by_depth = x.reshape(rest_by_depth).template cast<U>();
     const int rest_size_minus_one = (rest_size > 1) ? (rest_size - 1) : 1;
-    U rest_size_inv = static_cast<U>(1.0f / static_cast<U>(rest_size));
     // This adjustment is for Bessel's correction
     U rest_size_adjust =
         static_cast<U>(rest_size) / static_cast<U>(rest_size_minus_one);
