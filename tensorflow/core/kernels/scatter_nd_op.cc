@@ -171,26 +171,6 @@ class ScatterNdUpdateOp : public OpKernel {
   }
 };
 
-#ifdef TENSORFLOW_USE_SYCL
-#define REGISTER_SCATTER_ND_KERNEL_INDEX(type, index_type, dev, name) \
-  REGISTER_KERNEL_BUILDER(Name(name)                                  \
-                              .Device(DEVICE_##dev)                   \
-                              .TypeConstraint<type>("T")              \
-                              .TypeConstraint<index_type>("Tindices") \
-                              .HostMemory("shape")                    \
-                              .HostMemory("indices"),                 \
-                          ScatterNdOp<dev##Device, type, index_type>)
-
-#define REGISTER_SCATTER_ND_UPDATE_KERNEL_INDEX(type, index_type, dev, name, \
-                                                op)                          \
-  REGISTER_KERNEL_BUILDER(                                                   \
-      Name(name)                                                             \
-          .Device(DEVICE_##dev)                                              \
-          .TypeConstraint<type>("T")                                         \
-          .TypeConstraint<index_type>("Tindices")                            \
-          .HostMemory("indices"),                                            \
-      ScatterNdUpdateOp<dev##Device, type, index_type, op>)
-#else
 #define REGISTER_SCATTER_ND_KERNEL_INDEX(type, index_type, dev, name) \
   REGISTER_KERNEL_BUILDER(Name(name)                                  \
                               .Device(DEVICE_##dev)                   \
@@ -207,7 +187,6 @@ class ScatterNdUpdateOp : public OpKernel {
           .TypeConstraint<type>("T")                                         \
           .TypeConstraint<index_type>("Tindices"),                           \
       ScatterNdUpdateOp<dev##Device, type, index_type, op>)
-#endif  // TENSORFLOW_USE_SYCL
 
 #define REGISTER_RESOURCE_SCATTER_ND_UPDATE_KERNEL_INDEX(type, index_type, \
                                                          dev, name, op)    \
@@ -264,6 +243,8 @@ TF_CALL_NUMBER_TYPES(REGISTER_SCATTER_ND_UPDATE_CPU);
 TF_CALL_NUMBER_TYPES(REGISTER_SCATTER_ND_CPU);
 
 #ifdef TENSORFLOW_USE_SYCL
+#define REGISTER_SCATTER_ND_SYCL(type) REGISTER_SCATTER_ND(type, SYCL);
+
 #define REGISTER_SCATTER_ND_ADD_SUB_SYCL(type) \
   REGISTER_SCATTER_ND_ADD_SUB(type, SYCL);
 
@@ -272,6 +253,8 @@ TF_CALL_NUMBER_TYPES(REGISTER_SCATTER_ND_CPU);
 
 TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SCATTER_ND_ADD_SUB_SYCL);
 TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SCATTER_ND_UPDATE_SYCL);
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SCATTER_ND_SYCL);
+
 #undef REGISTER_SCATTER_ND_ADD_SUB_SYCL
 #undef REGISTER_SCATTER_ND_UPDATE_SYCL
 #endif  // TENSORFLOW_USE_SYCL
