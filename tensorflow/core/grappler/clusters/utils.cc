@@ -105,7 +105,6 @@ DeviceProperties GetLocalGPUInfo(int gpu_id) {
 }
 
 DeviceProperties GetDeviceInfo(const DeviceNameUtils::ParsedName& device) {
-  printf("%s \n", device.type.c_str());
   if (device.type == "CPU") {
     return GetLocalCPUInfo();
   } else if (device.type == "GPU" || device.type == "SYCL") {
