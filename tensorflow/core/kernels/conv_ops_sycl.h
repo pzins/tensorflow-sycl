@@ -26,8 +26,8 @@ struct LaunchConv2DOp<SYCLDevice, T> {
                   const Tensor& filter, int64 stride_rows, int64 stride_cols,
                   const Padding& padding, Tensor* output,
                   TensorFormat data_format) {
-    CHECK(data_format == FORMAT_NHWC) << "SYCL convolution implementation only "
-                                         "supports NHWC tensor format.";
+//    CHECK(data_format == FORMAT_NHWC) << "SYCL convolution implementation only "
+//                                         "supports NHWC tensor format.";
     const int64 batch = GetTensorDim(input, data_format, 'N');
     const int64 input_rows = GetTensorDim(input, data_format, 'H');
     const int64 input_cols = GetTensorDim(input, data_format, 'W');
@@ -55,8 +55,13 @@ struct LaunchConv2DOp<SYCLDevice, T> {
     T* const out_ptr = output->template flat<T>().data();
 
     SNN_SELECTOR sel;
+    if(data_format == FORMAT_NCHW) {
+    launch_conv2d_nchw<T, ConvType::Forward>(context->eigen_device<SYCLDevice>(),
+                                        in_ptr, fil_ptr, params, out_ptr, sel);
+    } else {
     launch_conv2d<T, ConvType::Forward>(context->eigen_device<SYCLDevice>(),
                                         in_ptr, fil_ptr, params, out_ptr, sel);
+    }
   }
 };
 template <typename T>
@@ -93,9 +98,14 @@ struct LaunchConv2DBackpropInputOp<SYCLDevice, T> {
     T* const out_ptr = in_backprop->template flat<T>().data();
 
     SNN_SELECTOR sel;
+    if(data_format == FORMAT_NCHW) {
+    launch_conv2d_nchw<T, ConvType::InputBackprop>(context->eigen_device<SYCLDevice>(),
+                                        in_ptr, fil_ptr, params, out_ptr, sel);
+    } else {
     launch_conv2d<T, ConvType::InputBackprop>(
         context->eigen_device<SYCLDevice>(), in_ptr, fil_ptr, params, out_ptr,
         sel);
+    }
   }
 };
 template <typename T>
@@ -132,9 +142,14 @@ struct LaunchConv2DBackpropFilterOp<SYCLDevice, T> {
     T* const out_ptr = filter_backprop->template flat<T>().data();
 
     SNN_SELECTOR sel;
+    if(data_format == FORMAT_NCHW) {
+    launch_conv2d_nchw<T, ConvType::FilterBackprop>(context->eigen_device<SYCLDevice>(),
+                                        in_ptr, fil_ptr, params, out_ptr, sel);
+    } else {
     launch_conv2d<T, ConvType::FilterBackprop>(
         context->eigen_device<SYCLDevice>(), in_ptr, fil_ptr, params, out_ptr,
         sel);
+    }
   }
 };
 }  // namespace tensorflow

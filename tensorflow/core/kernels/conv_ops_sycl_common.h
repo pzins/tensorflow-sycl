@@ -67,6 +67,23 @@ enum class ConvType {
   InputBackprop,
   FilterBackprop,
 };
+enum class DataLayout {
+  NHWC,
+  NCHW,
+};
+template <DataLayout D>
+inline int TensorIndex(int batch, int row, int col, int channel, int n_rows,
+                int n_cols, int n_channels);
+template <>
+inline int TensorIndex<DataLayout::NHWC>(int batch, int row, int col, int channel,
+                                  int n_rows, int n_cols, int n_channels) {
+  return ((batch * n_rows + row) * n_cols + col) * n_channels + channel;
+}
+template <>
+inline int TensorIndex<DataLayout::NCHW>(int batch, int row, int col, int channel,
+                                  int n_rows, int n_cols, int n_channels) {
+  return ((batch * n_channels + channel) * n_rows + row) * n_cols + col;
+}
 /** The different algorithms supported to compute convolutions. */
 enum class algorithm {
   matmul,

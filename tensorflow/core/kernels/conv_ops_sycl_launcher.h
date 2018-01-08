@@ -10,7 +10,7 @@
 #include "tensorflow/core/kernels/conv_ops_sycl_selectors.h"
 
 #include "tensorflow/core/kernels/conv_ops_im2col_sycl.h"
-#include "tensorflow/core/kernels/conv_ops_naive_sycl.h"
+#include "tensorflow/core/kernels/conv_ops_direct_sycl.h"
 #include "tensorflow/core/kernels/conv_ops_winograd_sycl.h"
 
 namespace tensorflow {
@@ -79,6 +79,15 @@ static inline void launch_conv2d(backend_type const& backend,
                                  backend_type::device_ptr<T> const output,
                                  algorithm_selector& selector) {
 */
+template <typename T, ConvType CType, typename backend_type>
+static inline void launch_conv2d_nchw(backend_type const& backend,
+                                      T const* const input,
+                                      T const* const filter,
+                                      SYCLConv2DParams& params, T* const output,
+                                      algorithm_selector& selector) {
+  LaunchNCHWConv2DKernel<T, CType>::launch(backend, output, input, filter,
+                                           params);
+}
 template <typename T, ConvType CType, typename backend_type>
 static inline void launch_conv2d(backend_type const& backend,
                                  T const* const input, T const* const filter,

@@ -2,8 +2,8 @@
 #error This file should only be included when compiling with SYCL support
 #endif
 
-#ifndef TENSORFLOW_KERNELS_CONV_OPS_NAIVE_SYCL_H_
-#define TENSORFLOW_KERNELS_CONV_OPS_NAIVE_SYCL_H_
+#ifndef TENSORFLOW_KERNELS_CONV_OPS_DIRECT_SYCL_KERNELS_H_
+#define TENSORFLOW_KERNELS_CONV_OPS_DIRECT_SYCL_KERNELS_H_
 
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 
@@ -11,7 +11,7 @@
 
 namespace tensorflow {
 typedef Eigen::SyclDevice SYCLDevice;
-namespace functor {
+namespace direct {
 /**
  * SYCL kernel for naive convolution computation.
  */
@@ -198,98 +198,6 @@ struct Conv2DNaiveSYCL<T, ConvType::FilterBackprop> {
   const read_accessor kernel_accessor_;
   write_accessor output_accessor_;
 };
-template <ConvType CType>
-inline SYCLConv2DParams get_kernel_params(SYCLConv2DParams params) {
-  return params;
-}
-template <>
-inline SYCLConv2DParams get_kernel_params<ConvType::InputBackprop>(
-    SYCLConv2DParams params) {
-  std::swap(params.channels_, params.features_);
-  return params;
-}
-template <>
-inline SYCLConv2DParams get_kernel_params<ConvType::FilterBackprop>(
-    SYCLConv2DParams params) {
-  // Map the input dimensions to those expected in the convolution kernel.
-  const auto window_rows =
-      params.out_rows_ * params.stride_rows_ - (params.stride_rows_ - 1);
-  const auto window_cols =
-      params.out_cols_ * params.stride_cols_ - (params.stride_cols_ - 1);
-  params.out_rows_ = params.window_rows_;
-  params.out_cols_ = params.window_cols_;
-  params.window_rows_ = window_rows;
-  params.window_cols_ = window_cols;
-  return params;
-}
-template <ConvType CType>
-inline size_t get_output_size(SYCLConv2DParams const& params);
-template <>
-inline size_t get_output_size<ConvType::Forward>(
-    SYCLConv2DParams const& params) {
-  return params.batch_ * params.out_rows_ * params.out_cols_ * params.features_;
-}
-template <>
-inline size_t get_output_size<ConvType::InputBackprop>(
-    SYCLConv2DParams const& params) {
-  return params.batch_ * params.in_rows_ * params.in_cols_ * params.channels_;
-}
-template <>
-inline size_t get_output_size<ConvType::FilterBackprop>(
-    SYCLConv2DParams const& params) {
-  return params.window_rows_ * params.window_cols_ * params.channels_ *
-         params.features_;
-}
-
-}  // namespace functor
-
-template <typename T, ConvType CType>
-struct LaunchConv2DKernel {
-  using Functor = functor::Conv2DNaiveSYCL<T, CType>;
-  static constexpr auto read_mode = Functor::read_mode;
-  static constexpr auto write_mode = Functor::write_mode;
-  using Index = int;
-
-  static void launch(Eigen::SyclDevice const& device, T* const output,
-                     T const* const input, T const* const filter,
-                     SYCLConv2DParams const& params) {
-    const Index output_size = functor::get_output_size<CType>(params);
-    const Index workgroup_size = device.maxSyclThreadsPerBlock();
-    const Index n_threads =
-        RoundUpToNearestMultiple(output_size, workgroup_size);
-
-    auto input_buffer = device.get_sycl_buffer(input);
-    auto filter_buffer = device.get_sycl_buffer(filter);
-    auto output_buffer = device.get_sycl_buffer(output);
-    auto kernel_params = functor::get_kernel_params<CType>(params);
-
-    device.sycl_queue().submit([&](cl::sycl::handler& cgh) {
-      auto input_access = input_buffer.template get_access<read_mode>(cgh);
-      auto filter_access = filter_buffer.template get_access<read_mode>(cgh);
-      auto output_access = output_buffer.template get_access<write_mode>(cgh);
-
-      Functor conv(output_size, kernel_params, input_access, filter_access,
-                   output_access);
-
-      cgh.parallel_for(cl::sycl::range<1>(n_threads), conv);
-    });
-  }
-};
-template <typename T, typename backend_type, ConvType CType>
-struct Launcher<T, backend_type, algorithm::direct, CType> final
-    : public LaunchConv2DKernel<T, CType> {};
-
-template <typename T>
-struct LaunchConv2DSYCL final
-    : public LaunchConv2DKernel<T, ConvType::Forward> {};
-
-template <typename T>
-struct LaunchConv2DBackpropInputSYCL final
-    : public LaunchConv2DKernel<T, ConvType::InputBackprop> {};
-
-template <typename T>
-struct LaunchConv2DBackpropFilterSYCL final
-    : public LaunchConv2DKernel<T, ConvType::FilterBackprop> {};
-
+}  // namespace direct
 }  // namespace tensorflow
-#endif  // TENSORFLOW_KERNELS_CONV_OPS_NAIVE_SYCL_H_
+#endif  // TENSORFLOW_KERNELS_CONV_OPS_DIRECT_SYCL_KERNELS_H_
