@@ -208,16 +208,13 @@ class Conv2DFastBackpropFilterOp : public OpKernel {
     OP_REQUIRES_OK(context, context->GetAttr("data_format", &data_format));
     OP_REQUIRES(context, FormatFromString(data_format, &data_format_),
                 errors::InvalidArgument("Invalid data format"));
-    if(!std::is_same<Device, Eigen::SyclDevice>::value) {
     OP_REQUIRES(context, data_format_ == FORMAT_NHWC,
                 errors::InvalidArgument(
                     "Conv2DFastBackpropFilterOp only supports NHWC."));
-    }
     OP_REQUIRES_OK(context, context->GetAttr("strides", &strides_));
     OP_REQUIRES(context, strides_.size() == 4,
                 errors::InvalidArgument("Sliding window strides field must "
                                         "specify 4 dimensions"));
-    if(!std::is_same<Device, Eigen::SyclDevice>::value) {
     OP_REQUIRES(
         context, (strides_[0] == 1 && strides_[3] == 1),
         errors::InvalidArgument("Current implementation does not yet support "
@@ -225,7 +222,6 @@ class Conv2DFastBackpropFilterOp : public OpKernel {
     OP_REQUIRES(context, strides_[1] > 0 && strides_[2] > 0,
                 errors::InvalidArgument(
                     "Row and column strides should be larger than 0."));
-    }
     OP_REQUIRES_OK(context, context->GetAttr("padding", &padding_));
     OP_REQUIRES_OK(context, context->GetAttr("dilations", &dilations_));
     OP_REQUIRES(context, dilations_.size() == 4,
@@ -560,6 +556,8 @@ typedef AutoTuneSingleton<ConvBackwardFilterAutoTuneGroup, ConvParameters,
                           perftools::gputools::dnn::AlgorithmConfig>
     AutoTuneConvBwdFilter;
 
+#endif  // GOOGLE_CUDA
+#if GOOGLE_CUDA || defined(TENSORFLOW_USE_SYCL)
 // Backprop for filter.
 template <typename Device, class T>
 class Conv2DSlowBackpropFilterOp : public OpKernel {
@@ -656,6 +654,8 @@ class Conv2DSlowBackpropFilterOp : public OpKernel {
   TF_DISALLOW_COPY_AND_ASSIGN(Conv2DSlowBackpropFilterOp);
 };
 
+#endif  // GOOGLE_CUDA || defined(TENSORFLOW_USE_SYCL)
+#if GOOGLE_CUDA
 template <typename T>
 void LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T>::operator()(
     OpKernelContext* ctx, bool use_cudnn, bool cudnn_use_autotune,
@@ -1067,7 +1067,7 @@ REGISTER_KERNEL_BUILDER(Name("Conv2DBackpropFilter")
                               .Device(DEVICE_SYCL)         \
                               .TypeConstraint<T>("T")      \
                               .HostMemory("filter_sizes"), \
-                          Conv2DFastBackpropFilterOp<SYCLDevice, T>);
+                          Conv2DSlowBackpropFilterOp<SYCLDevice, T>);
 
 TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL_KERNELS)
 #undef REGISTER_SYCL_KERNELS

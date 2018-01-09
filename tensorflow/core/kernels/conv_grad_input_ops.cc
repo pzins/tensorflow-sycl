@@ -632,6 +632,8 @@ typedef AutoTuneSingleton<ConvBackwardDataAutoTuneGroup, ConvParameters,
                           perftools::gputools::dnn::AlgorithmConfig>
     AutoTuneConvBwdData;
 
+#endif  // GOOGLE_CUDA
+#if GOOGLE_CUDA || defined(TENSORFLOW_USE_SYCL)
 // Backprop for input.
 template <typename Device, class T>
 class Conv2DSlowBackpropInputOp : public OpKernel {
@@ -724,6 +726,8 @@ class Conv2DSlowBackpropInputOp : public OpKernel {
   TF_DISALLOW_COPY_AND_ASSIGN(Conv2DSlowBackpropInputOp);
 };
 
+#endif  // GOOGLE_CUDA || defined(TENSORFLOW_USE_SYCL)
+#if GOOGLE_CUDA
 template <typename T>
 void LaunchConv2DBackpropInputOp<GPUDevice, T>::operator()(
     OpKernelContext* ctx, bool use_cudnn, bool cudnn_use_autotune,
@@ -1139,7 +1143,7 @@ REGISTER_KERNEL_BUILDER(Name("Conv2DBackpropInput")
                               .Device(DEVICE_SYCL)        \
                               .TypeConstraint<T>("T")     \
                               .HostMemory("input_sizes"), \
-                          Conv2DFastBackpropInputOp<SYCLDevice, T>);
+                          Conv2DSlowBackpropInputOp<SYCLDevice, T>);
 
 TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL_KERNELS);
 #undef REGISTER_SYCL_KERNELS

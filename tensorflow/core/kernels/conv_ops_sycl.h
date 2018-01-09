@@ -21,13 +21,17 @@ struct LaunchConv2DOp;
 
 template <typename T>
 struct LaunchConv2DOp<SYCLDevice, T> {
-  void operator()(OpKernelContext* context, bool use_cudnn,
-                  bool cudnn_use_autotune, const Tensor& input,
-                  const Tensor& filter, int64 stride_rows, int64 stride_cols,
-                  const Padding& padding, Tensor* output,
-                  TensorFormat data_format) {
-//    CHECK(data_format == FORMAT_NHWC) << "SYCL convolution implementation only "
-//                                         "supports NHWC tensor format.";
+  void operator()(OpKernelContext* context, bool /*use_cudnn*/,
+                  bool /*cudnn_use_autotune*/, const Tensor& input,
+                  const Tensor& filter, int row_dilation, int col_dilation,
+                  int64 stride_rows, int64 stride_cols, const Padding& padding,
+                  Tensor* output, TensorFormat data_format) {
+    if (row_dilation > 1 || col_dilation > 1) {
+      context->SetStatus(
+          errors::Unimplemented("The current SYCL convolution implementation "
+                                "only supports dilated rate of 1 for now."));
+      return;
+    }
     const int64 batch = GetTensorDim(input, data_format, 'N');
     const int64 input_rows = GetTensorDim(input, data_format, 'H');
     const int64 input_cols = GetTensorDim(input, data_format, 'W');
@@ -68,9 +72,15 @@ template <typename T>
 struct LaunchConv2DBackpropInputOp<SYCLDevice, T> {
   void operator()(OpKernelContext* context, bool /*use_cudnn*/,
                   bool /*cudnn_use_autotune*/, const Tensor& out_backprop,
-                  const Tensor& filter, int64 stride_rows, int64 stride_cols,
-                  const Padding& padding, Tensor* in_backprop,
-                  TensorFormat data_format) {
+                  const Tensor& filter, int32 row_dilation, int32 col_dilation,
+                  int64 stride_rows, int64 stride_cols, const Padding& padding,
+                  Tensor* in_backprop, TensorFormat data_format) {
+    if (row_dilation > 1 || col_dilation > 1) {
+      context->SetStatus(
+          errors::Unimplemented("The current SYCL convolution implementation "
+                                "only supports dilated rate of 1 for now."));
+      return;
+    }
     const int64 batch = GetTensorDim(*in_backprop, data_format, 'N');
     const int64 input_rows = GetTensorDim(*in_backprop, data_format, 'H');
     const int64 input_cols = GetTensorDim(*in_backprop, data_format, 'W');
@@ -112,9 +122,15 @@ template <typename T>
 struct LaunchConv2DBackpropFilterOp<SYCLDevice, T> {
   void operator()(OpKernelContext* context, bool /*use_cudnn*/,
                   bool /*cudnn_use_autotune*/, const Tensor& out_backprop,
-                  const Tensor& input, int64 stride_rows, int64 stride_cols,
-                  const Padding& padding, Tensor* filter_backprop,
-                  TensorFormat data_format) {
+                  const Tensor& input, int32 row_dilation, int32 col_dilation,
+                  int64 stride_rows, int64 stride_cols, const Padding& padding,
+                  Tensor* filter_backprop, TensorFormat data_format) {
+    if (row_dilation > 1 || col_dilation > 1) {
+      context->SetStatus(
+          errors::Unimplemented("The current SYCL convolution implementation "
+                                "only supports dilated rate of 1 for now."));
+      return;
+    }
     const int64 batch = GetTensorDim(input, data_format, 'N');
     const int64 input_rows = GetTensorDim(input, data_format, 'H');
     const int64 input_cols = GetTensorDim(input, data_format, 'W');
