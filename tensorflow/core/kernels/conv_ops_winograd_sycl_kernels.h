@@ -206,7 +206,7 @@ struct IntermediateTile {
   /**
    * Read the intermediate tile from a temporary buffer. The input shape is
    * expected to be
-   *   [ (M+R-1)(N+S-1), features, (batch * tile_rows * tile_cols) ].
+   *   [ (M+R-1)(N+S-1), (batch * tile_rows * tile_cols), features ].
    */
   template <typename _T>
   inline TF_ATTRIBUTE_ALWAYS_INLINE IntermediateTile(_T* input,
@@ -214,7 +214,7 @@ struct IntermediateTile {
                                                      int const n_tiles,
                                                      int const feature,
                                                      int const n_features) {
-    input += feature * n_tiles + tile_idx;
+    input += tile_idx * n_features + feature;
     for (int r = 0; r < A; ++r) {
       for (int c = 0; c < B; ++c) {
         const int idx = (r * B + c) * n_features * n_tiles;
@@ -701,8 +701,8 @@ struct ExtractOutputTiles {
       const T* input_data = ConvertToActualTypeSycl(T, input_accessor_);
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
 
-      const Index tile_idx = index % n_tiles_;
-      const Index feature = index / n_tiles_;
+      const Index feature = index % p_.features_;
+      const Index tile_idx = index / p_.features_;
 
       IntermediateTile<T, M, N, R, S> tmp{input_data, tile_idx, n_tiles_,
                                           feature, p_.features_};
@@ -751,8 +751,8 @@ struct ExtractOutputTiles<T, M, N, R, S, ConvType::FilterBackprop> {
       const Index feature = index % p_.features_;
       const Index channel = index / p_.features_;
 
-      IntermediateTile<T, M, N, R, S> tmp{input_data, feature, p_.features_,
-                                          channel, p_.channels_};
+      IntermediateTile<T, M, N, R, S> tmp{input_data, channel, p_.channels_,
+                                          feature, p_.features_};
       OutputData<T, M, N, R, S>::write_filter_output(
           output_data, channel, feature, p_.channels_, p_.features_,
           OutputTile<T, M, N, R, S>{tmp});

@@ -57,8 +57,8 @@ struct LaunchMatmulWinograd {
     size_t const inter_bytes = A * B * n_tiles * params.features_ * sizeof(T);
     T* const intermediate = static_cast<T*>(device.allocate_temp(inter_bytes));
     sycl_conv::launch_batch_matmul<false, true>(
-        device, fil_transform, in_transform, intermediate, A * B,
-        params.features_, params.channels_, n_tiles);
+        device, in_transform, fil_transform, intermediate, A * B,
+        n_tiles, params.channels_, params.features_);
 
     device.deallocate_temp(fil_transform);
     device.deallocate_temp(in_transform);
