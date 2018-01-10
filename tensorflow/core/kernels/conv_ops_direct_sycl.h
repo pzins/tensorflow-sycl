@@ -57,9 +57,27 @@ inline size_t get_output_size<ConvType::FilterBackprop>(
   return params.window_rows_ * params.window_cols_ * params.channels_ *
          params.features_;
 }
+template <ConvType CType>
+inline bool no_fast_div(SYCLConv2DParams const& params);
+template <>
+inline bool no_fast_div<ConvType::Forward>(SYCLConv2DParams const& params) {
+  return params.features_ == 1 || params.out_rows_ == 1 ||
+         params.out_cols_ == 1;
+}
+template <>
+inline bool no_fast_div<ConvType::InputBackprop>(
+    SYCLConv2DParams const& params) {
+  return params.features_ == 1 || params.in_rows_ == 1 || params.in_cols_ == 1;
+}
+template <>
+inline bool no_fast_div<ConvType::FilterBackprop>(
+    SYCLConv2DParams const& params) {
+  return params.features_ == 1 || params.channels_ == 1 ||
+         params.out_cols_ == 1;
+}
 template <typename T, ConvType CType>
 struct LaunchConv2DKernel {
-  using Functor = Conv2DNaiveSYCL<T, CType>;
+  using Functor = Conv2DSYCL<T, CType, false>;
   static constexpr auto read_mode = Functor::read_mode;
   static constexpr auto write_mode = Functor::write_mode;
   using Index = int;
@@ -77,16 +95,30 @@ struct LaunchConv2DKernel {
     auto output_buffer = device.get_sycl_buffer(output);
     auto kernel_params = get_kernel_params<CType>(params);
 
-    device.sycl_queue().submit([&](cl::sycl::handler& cgh) {
-      auto input_access = input_buffer.template get_access<read_mode>(cgh);
-      auto filter_access = filter_buffer.template get_access<read_mode>(cgh);
-      auto output_access = output_buffer.template get_access<write_mode>(cgh);
+    if (no_fast_div<CType>(kernel_params)) {
+      device.sycl_queue().submit([&](cl::sycl::handler& cgh) {
+        auto input_access = input_buffer.template get_access<read_mode>(cgh);
+        auto filter_access = filter_buffer.template get_access<read_mode>(cgh);
+        auto output_access = output_buffer.template get_access<write_mode>(cgh);
 
-      Functor conv(output_size, kernel_params, input_access, filter_access,
-                   output_access);
+        Functor conv(output_size, kernel_params, input_access, filter_access,
+                     output_access);
 
-      cgh.parallel_for(cl::sycl::range<1>(n_threads), conv);
-    });
+        cgh.parallel_for(cl::sycl::range<1>(n_threads), conv);
+      });
+    } else {
+      device.sycl_queue().submit([&](cl::sycl::handler& cgh) {
+        auto input_access = input_buffer.template get_access<read_mode>(cgh);
+        auto filter_access = filter_buffer.template get_access<read_mode>(cgh);
+        auto output_access = output_buffer.template get_access<write_mode>(cgh);
+
+        Conv2DSYCL<T, CType, true> conv(output_size, kernel_params,
+                                        input_access, filter_access,
+                                        output_access);
+
+        cgh.parallel_for(cl::sycl::range<1>(n_threads), conv);
+      });
+    }
   }
 };
 

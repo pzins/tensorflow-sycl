@@ -8,19 +8,70 @@
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 
 #include "tensorflow/core/kernels/conv_ops_sycl_common.h"
+#include "tensorflow/core/kernels/conv_ops_sycl_fast_div.h"
 
 namespace tensorflow {
 typedef Eigen::SyclDevice SYCLDevice;
+template <typename T>
+using fast_intdiv = fast_div::magic_numbers<T>;
 namespace direct {
+#define PARAM_NAME(x) params_##x
+
+#define PARAM_ARG(x) const Index PARAM_NAME(x)
+
+#define INJECT_CONV_PARAMS   \
+  PARAM_ARG(channels_);      \
+  PARAM_ARG(features_);      \
+  PARAM_ARG(batch_);         \
+  PARAM_ARG(in_rows_);       \
+  PARAM_ARG(in_cols_);       \
+  PARAM_ARG(window_rows_);   \
+  PARAM_ARG(window_cols_);   \
+  PARAM_ARG(stride_rows_);   \
+  PARAM_ARG(stride_cols_);   \
+  PARAM_ARG(out_rows_);      \
+  PARAM_ARG(out_cols_);      \
+  PARAM_ARG(pad_rows_);      \
+  PARAM_ARG(pad_cols_);      \
+  PARAM_ARG(dilation_rows_); \
+  PARAM_ARG(dilation_cols_);
+
+#define PARAM_CONSTRUCT(x, params) \
+  PARAM_NAME(x) { params.x }
+
+#define CONSTRUCT_CONV_PARAMS(params)                                         \
+  PARAM_CONSTRUCT(channels_, params)                                          \
+  , PARAM_CONSTRUCT(features_, params), PARAM_CONSTRUCT(batch_, params),      \
+      PARAM_CONSTRUCT(in_rows_, params), PARAM_CONSTRUCT(in_cols_, params),   \
+      PARAM_CONSTRUCT(window_rows_, params),                                  \
+      PARAM_CONSTRUCT(window_cols_, params),                                  \
+      PARAM_CONSTRUCT(stride_rows_, params),                                  \
+      PARAM_CONSTRUCT(stride_cols_, params),                                  \
+      PARAM_CONSTRUCT(out_rows_, params), PARAM_CONSTRUCT(out_cols_, params), \
+      PARAM_CONSTRUCT(pad_rows_, params), PARAM_CONSTRUCT(pad_cols_, params), \
+      PARAM_CONSTRUCT(dilation_rows_, params),                                \
+      PARAM_CONSTRUCT(dilation_cols_, params)
+
+#define PARAMS(x) PARAM_NAME(x)
 /**
  * SYCL kernel for naive convolution computation.
  */
-template <typename T, ConvType CType>
-struct Conv2DNaiveSYCL;
-template <typename T>
-struct Conv2DNaiveSYCL<T, ConvType::Forward> {
+template <typename Index, bool use_fast_div>
+struct index_div {
+  using type = Index;
+};
+template <typename Index>
+struct index_div<Index, true> {
+  using type = fast_div::magic_numbers<Index>;
+};
+
+template <typename T, ConvType CType, bool use_fast_div = false>
+struct Conv2DSYCL;
+template <typename T, bool use_fast_div>
+struct Conv2DSYCL<T, ConvType::Forward, use_fast_div> {
   using Index = int;
   using buffer_data = uint8_t;
+  using index_div_type = typename index_div<Index, use_fast_div>::type;
   static constexpr auto read_mode = cl::sycl::access::mode::read;
   static constexpr auto write_mode = cl::sycl::access::mode::discard_write;
   static constexpr auto global_access = cl::sycl::access::target::global_buffer;
@@ -29,11 +80,16 @@ struct Conv2DNaiveSYCL<T, ConvType::Forward> {
   using read_accessor =
       cl::sycl::accessor<buffer_data, 1, read_mode, global_access>;
 
-  inline TF_ATTRIBUTE_ALWAYS_INLINE Conv2DNaiveSYCL(
-      Index n_elems, const SYCLConv2DParams& params, const read_accessor input,
-      const read_accessor kernel, write_accessor output)
+  inline TF_ATTRIBUTE_ALWAYS_INLINE Conv2DSYCL(Index n_elems,
+                                               const SYCLConv2DParams& params,
+                                               const read_accessor input,
+                                               const read_accessor kernel,
+                                               write_accessor output)
       : n_elems_{n_elems},
-        p_{params},
+        div_features_{params.features_},
+        div_out_cols_{params.out_cols_},
+        div_out_rows_{params.out_rows_},
+        CONSTRUCT_CONV_PARAMS(params),
         input_accessor_{input},
         kernel_accessor_{kernel},
         output_accessor_{output} {}
@@ -46,21 +102,35 @@ struct Conv2DNaiveSYCL<T, ConvType::Forward> {
       const T* kernel_data = ConvertToActualTypeSycl(T, kernel_accessor_);
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
 
-      const Index feature = index % p_.features_;
-      const Index tile_idx = index / p_.features_;
-      const SYCL2DWindow w = p_.input_window_from_output(tile_idx);
+      const Index brc_idx = index / div_features_;
+      const Index feature = index - brc_idx * PARAMS(features_);
+
+      const Index br_idx = brc_idx / div_out_cols_;
+      const Index col_idx = brc_idx - br_idx * PARAMS(out_cols_);
+      const Index cstart = col_idx * PARAMS(stride_cols_) - PARAMS(pad_cols_);
+
+      const Index batch = br_idx / div_out_rows_;
+      const Index row_idx = br_idx - batch * PARAMS(out_rows_);
+      const Index rstart = row_idx * PARAMS(stride_rows_) - PARAMS(pad_rows_);
 
       T out_val = static_cast<T>(0);
       const T* input_data_n =
-          input_data + w.batch * p_.in_cols_ * p_.in_rows_ * p_.channels_;
-      for (Index r = w.rstart, i = 0; r < w.rend; ++r, ++i) {
+          input_data +
+          batch * PARAMS(in_cols_) * PARAMS(in_rows_) * PARAMS(channels_);
+      for (Index r = rstart, i = 0;
+           i < PARAMS(window_rows_) && r < PARAMS(in_rows_); ++r, ++i) {
         if (r >= 0) {
-          for (Index c = w.cstart, j = 0; c < w.cend; ++c, ++j) {
+          for (Index c = cstart, j = 0;
+               j < PARAMS(window_cols_) && c < PARAMS(in_cols_); ++c, ++j) {
             if (c >= 0) {
-              for (Index channel = 0; channel < p_.channels_; ++channel) {
+              for (Index channel = 0; channel < PARAMS(channels_); ++channel) {
                 const Index idx =
-                    (r * p_.in_cols_ + c) * p_.channels_ + channel;
-                const Index k_idx = p_.kernel_index(channel, feature, i, j);
+                    (r * PARAMS(in_cols_) + c) * PARAMS(channels_) + channel;
+                const Index k_idx =
+                    ((i * PARAMS(window_cols_) + j) * PARAMS(channels_) +
+                     channel) *
+                        PARAMS(features_) +
+                    feature;
                 out_val += input_data_n[idx] * kernel_data[k_idx];
               }
             }
@@ -73,15 +143,19 @@ struct Conv2DNaiveSYCL<T, ConvType::Forward> {
 
  private:
   const Index n_elems_;
-  const SYCLConv2DParams p_;
+  const index_div_type div_features_;
+  const index_div_type div_out_cols_;
+  const index_div_type div_out_rows_;
+  INJECT_CONV_PARAMS;
   const read_accessor input_accessor_;
   const read_accessor kernel_accessor_;
   write_accessor output_accessor_;
 };
-template <typename T>
-struct Conv2DNaiveSYCL<T, ConvType::InputBackprop> {
+template <typename T, bool use_fast_div>
+struct Conv2DSYCL<T, ConvType::InputBackprop, use_fast_div> {
   using Index = int;
   using buffer_data = uint8_t;
+  using index_div_type = typename index_div<Index, use_fast_div>::type;
   static constexpr auto read_mode = cl::sycl::access::mode::read;
   static constexpr auto write_mode = cl::sycl::access::mode::discard_write;
   static constexpr auto global_access = cl::sycl::access::target::global_buffer;
@@ -90,11 +164,16 @@ struct Conv2DNaiveSYCL<T, ConvType::InputBackprop> {
   using read_accessor =
       cl::sycl::accessor<buffer_data, 1, read_mode, global_access>;
 
-  inline TF_ATTRIBUTE_ALWAYS_INLINE Conv2DNaiveSYCL(
-      Index n_elems, const SYCLConv2DParams& params, const read_accessor input,
-      const read_accessor kernel, write_accessor output)
+  inline TF_ATTRIBUTE_ALWAYS_INLINE Conv2DSYCL(Index n_elems,
+                                               const SYCLConv2DParams& params,
+                                               const read_accessor input,
+                                               const read_accessor kernel,
+                                               write_accessor output)
       : n_elems_{n_elems},
-        p_{params},
+        div_features_{params.features_},
+        div_in_rows_{params.in_rows_},
+        div_in_cols_{params.in_cols_},
+        CONSTRUCT_CONV_PARAMS(params),
         input_accessor_{input},
         kernel_accessor_{kernel},
         output_accessor_{output} {}
@@ -106,20 +185,57 @@ struct Conv2DNaiveSYCL<T, ConvType::InputBackprop> {
       const T* kernel_data = ConvertToActualTypeSycl(T, kernel_accessor_);
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
 
-      const Index feature = index % p_.features_;
-      const Index tile_idx = index / p_.features_;
-      const SYCL2DWindow w = p_.output_window_from_input_no_dilation(tile_idx);
+      const Index tile_idx = index / div_features_;
+      const Index feature = index - tile_idx * PARAMS(features_);
+
+      const Index brc_idx = tile_idx;
+      const Index br_idx = brc_idx / div_in_cols_;
+      const Index col_idx = brc_idx - br_idx * PARAMS(in_cols_);
+      // c is the index in the padded output tensor (ie with lots of extra
+      // zeros), but without the first padding. first_padded_c adds this extra
+      // padding.
+      const Index c = col_idx + PARAMS(pad_cols_);
+      const Index first_padded_c = c - PARAMS(window_cols_) + 1;
+      // The first and last output indices affected by this input.
+      const Index last_used_c = c / PARAMS(stride_cols_);
+      const Index first_used_c =
+          RoundRatioUpAboveZero(first_padded_c, PARAMS(stride_cols_));
+
+      const Index firstc = first_used_c * PARAMS(stride_cols_) - first_padded_c;
+      const Index cstart = cl::sycl::max(first_used_c, static_cast<Index>(0));
+      const Index cend = cl::sycl::min(last_used_c + 1, PARAMS(out_cols_));
+
+      const Index batch = br_idx / div_in_rows_;
+      const Index row_idx = br_idx - batch * PARAMS(in_rows_);
+      const Index r = row_idx + PARAMS(pad_rows_);
+      const Index last_used_r = r / PARAMS(stride_rows_);
+      const Index first_padded_r = r - PARAMS(window_rows_) + 1;
+      const Index first_used_r =
+          RoundRatioUpAboveZero(first_padded_r, PARAMS(stride_rows_));
+
+      const Index firstr = first_used_r * PARAMS(stride_rows_) - first_padded_r;
+      const Index rstart = cl::sycl::max(first_used_r, static_cast<Index>(0));
+      const Index rend = cl::sycl::min(last_used_r + 1, PARAMS(out_rows_));
 
       T out_val = static_cast<T>(0);
       const T* input_data_n =
-          input_data + w.batch * p_.out_cols_ * p_.out_rows_ * p_.channels_;
-      for (Index r = w.rstart, i = w.firstr; r < w.rend;
-           ++r, i += p_.stride_rows_) {
-        for (Index c = w.cstart, j = w.firstc; c < w.cend;
-             ++c, j += p_.stride_cols_) {
-          for (Index channel = 0; channel < p_.channels_; ++channel) {
-            const Index idx = (r * p_.out_cols_ + c) * p_.channels_ + channel;
-            const Index k_idx = p_.backprop_index(feature, channel, i, j);
+          input_data +
+          batch * PARAMS(out_cols_) * PARAMS(out_rows_) * PARAMS(channels_);
+      for (Index r = rstart, i = firstr; r < rend;
+           ++r, i += PARAMS(stride_rows_)) {
+        for (Index c = cstart, j = firstc; c < cend;
+             ++c, j += PARAMS(stride_cols_)) {
+          for (Index channel = 0; channel < PARAMS(channels_); ++channel) {
+            const Index idx =
+                (r * PARAMS(out_cols_) + c) * PARAMS(channels_) + channel;
+            const Index mirrored_row = PARAMS(window_rows_) - i - 1;
+            const Index mirrored_col = PARAMS(window_cols_) - j - 1;
+            const Index k_idx =
+                ((mirrored_row * PARAMS(window_cols_) + mirrored_col) *
+                     PARAMS(features_) +
+                 feature) *
+                    PARAMS(channels_) +
+                channel;
             out_val += input_data_n[idx] * kernel_data[k_idx];
           }
         }
@@ -130,7 +246,10 @@ struct Conv2DNaiveSYCL<T, ConvType::InputBackprop> {
 
  private:
   const Index n_elems_;
-  const SYCLConv2DParams p_;
+  const index_div_type div_features_;
+  const index_div_type div_in_rows_;
+  const index_div_type div_in_cols_;
+  INJECT_CONV_PARAMS;
   const read_accessor input_accessor_;
   const read_accessor kernel_accessor_;
   write_accessor output_accessor_;
@@ -140,10 +259,11 @@ struct Conv2DNaiveSYCL<T, ConvType::InputBackprop> {
  * handled. In the filter backprop the input is strided and the kernel is not
  * whereas in the input backprop this is the other way around.
  */
-template <typename T>
-struct Conv2DNaiveSYCL<T, ConvType::FilterBackprop> {
+template <typename T, bool use_fast_div>
+struct Conv2DSYCL<T, ConvType::FilterBackprop, use_fast_div> {
   using Index = int;
   using buffer_data = uint8_t;
+  using index_div_type = typename index_div<Index, use_fast_div>::type;
   static constexpr auto read_mode = cl::sycl::access::mode::read;
   static constexpr auto write_mode = cl::sycl::access::mode::discard_write;
   static constexpr auto global_access = cl::sycl::access::target::global_buffer;
@@ -152,11 +272,16 @@ struct Conv2DNaiveSYCL<T, ConvType::FilterBackprop> {
   using read_accessor =
       cl::sycl::accessor<buffer_data, 1, read_mode, global_access>;
 
-  inline TF_ATTRIBUTE_ALWAYS_INLINE Conv2DNaiveSYCL(
-      Index n_elems, const SYCLConv2DParams& params, const read_accessor input,
-      const read_accessor kernel, write_accessor output)
+  inline TF_ATTRIBUTE_ALWAYS_INLINE Conv2DSYCL(Index n_elems,
+                                               const SYCLConv2DParams& params,
+                                               const read_accessor input,
+                                               const read_accessor kernel,
+                                               write_accessor output)
       : n_elems_{n_elems},
-        p_{params},
+        div_features_{params.features_},
+        div_channels_{params.channels_},
+        div_out_cols_{params.out_cols_},
+        CONSTRUCT_CONV_PARAMS(params),
         input_accessor_{input},
         kernel_accessor_{kernel},
         output_accessor_{output} {}
@@ -167,25 +292,48 @@ struct Conv2DNaiveSYCL<T, ConvType::FilterBackprop> {
       const T* input_data = ConvertToActualTypeSycl(T, input_accessor_);
       const T* kernel_data = ConvertToActualTypeSycl(T, kernel_accessor_);
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
-      const SYCL2DKernelWindow w = p_.kernel_window_from_output(index);
+
+      const Index hwcf_idx = index;
+      const Index hwc_idx = hwcf_idx / div_features_;
+      const Index feature = hwcf_idx - hwc_idx * PARAMS(features_);
+      const Index hw_idx = hwc_idx / div_channels_;
+      const Index channel = hwc_idx - hw_idx * PARAMS(channels_);
+
+      const Index row_idx = hw_idx / div_out_cols_;
+      const Index col_idx = hw_idx - row_idx * PARAMS(out_cols_);
+      const Index cstart = col_idx - PARAMS(pad_cols_);
+      const Index cend =
+          cl::sycl::min(cstart + PARAMS(window_cols_), PARAMS(in_cols_));
+
+      const Index rstart = row_idx - PARAMS(pad_rows_);
+      const Index rend =
+          cl::sycl::min(rstart + PARAMS(window_rows_), PARAMS(in_rows_));
+
+      const Index filter_rows =
+          RoundRatioUpAboveZero(PARAMS(window_rows_), PARAMS(stride_rows_));
+      const Index filter_cols =
+          RoundRatioUpAboveZero(PARAMS(window_cols_), PARAMS(stride_cols_));
 
       T out_val = static_cast<T>(0);
       const T* input_data_n = input_data;
-      for (Index b = 0; b < p_.batch_; b++) {
-        for (Index r = w.rstart, i = 0; r < w.rend; ++i, r += p_.stride_rows_) {
+      for (Index b = 0; b < PARAMS(batch_); b++) {
+        for (Index r = rstart, i = 0; r < rend;
+             ++i, r += PARAMS(stride_rows_)) {
           if (r >= 0) {
-            for (Index c = w.cstart, j = 0; c < w.cend;
-                 ++j, c += p_.stride_cols_) {
+            for (Index c = cstart, j = 0; c < cend;
+                 ++j, c += PARAMS(stride_cols_)) {
               if (c >= 0) {
                 const Index idx =
-                    (r * p_.in_cols_ + c) * p_.channels_ + w.channel;
-                const Index k_idx = p_.filter_kernel_index(b, i, j, w.feature);
+                    (r * PARAMS(in_cols_) + c) * PARAMS(channels_) + channel;
+                const Index k_idx = ((b * filter_rows + i) * filter_cols + j) *
+                                        PARAMS(features_) +
+                                    feature;
                 out_val += input_data_n[idx] * kernel_data[k_idx];
               }
             }
           }
         }
-        input_data_n += p_.in_cols_ * p_.in_rows_ * p_.channels_;
+        input_data_n += PARAMS(in_cols_) * PARAMS(in_rows_) * PARAMS(channels_);
       }
       output_data[index] = out_val;
     }
@@ -193,7 +341,10 @@ struct Conv2DNaiveSYCL<T, ConvType::FilterBackprop> {
 
  private:
   const Index n_elems_;
-  const SYCLConv2DParams p_;
+  const index_div_type div_features_;
+  const index_div_type div_channels_;
+  const index_div_type div_out_cols_;
+  INJECT_CONV_PARAMS;
   const read_accessor input_accessor_;
   const read_accessor kernel_accessor_;
   write_accessor output_accessor_;
