@@ -95,13 +95,13 @@ struct FilterTile<T, M, N, R, S, ConvType::InputBackprop> final
                                                int const feature,
                                                int const n_channels,
                                                int const n_features) {
-    input += feature * n_channels + channel;
+    input += channel * n_features + feature;
     for (int r = 0; r < R; ++r) {
       for (int c = 0; c < S; ++c) {
         // Here the transforms (R - 1 - r) and (S - 1 - c) mirror the filter
         // data. Note that the channel and feature dims were switched in the
         // kernel params.
-        int idx = ((R - 1 - r) * S + (S - 1 - c)) * n_features * n_channels;
+        int idx = ((R - 1 - r) * S + (S - 1 - c)) * n_channels * n_features;
         data[r][c] = input[idx];
       }
     }
@@ -556,6 +556,72 @@ struct ExtractKernelTiles {
   const Index n_threads_;
   const Index n_channels_;
   const Index n_features_;
+  const read_accessor kernel_accessor_;
+  write_accessor output_accessor_;
+};
+template <typename T, int M, int N, int R, int S>
+struct ExtractKernelTiles<T, M, N, R, S, ConvType::InputBackprop> {
+  using Index = int;
+  using buffer_data = uint8_t;
+  static constexpr auto CType = ConvType::InputBackprop;
+  static constexpr auto read_mode = cl::sycl::access::mode::read;
+  static constexpr auto write_mode = cl::sycl::access::mode::discard_write;
+  static constexpr auto global_access = cl::sycl::access::target::global_buffer;
+  using write_accessor =
+      cl::sycl::accessor<buffer_data, 1, write_mode, global_access>;
+  using read_accessor =
+      cl::sycl::accessor<buffer_data, 1, read_mode, global_access>;
+
+  /*
+   * Note that for the input backprop the features and channels in params have
+   * been switched. params.channels_ are most packed in memory, which we expect
+   * to be n_features_ in the kernel. We switch these back in the constructor
+   * so they are as expected.
+   */
+  inline TF_ATTRIBUTE_ALWAYS_INLINE ExtractKernelTiles(
+      Index const n_threads, Index const /*n_tiles*/,
+      SYCLConv2DParams const& params, read_accessor const kernel,
+      write_accessor output)
+      : n_threads_{n_threads},
+        n_features_{params.channels_},
+        n_channels_{params.features_},
+        kernel_accessor_{kernel},
+        output_accessor_{output} {}
+
+  inline TF_ATTRIBUTE_ALWAYS_INLINE void operator()(cl::sycl::item<1> item) {
+    Index index = item.get(0);
+    if (index < n_threads_) {
+      const T* kernel_data = ConvertToActualTypeSycl(T, kernel_accessor_);
+      T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
+
+      const Index feature_idx = index / n_channels_;
+      const Index channel_idx = index % n_channels_;
+
+      FilterTile<T, M, N, R, S, CType> filter(
+          kernel_data, channel_idx, feature_idx, n_channels_, n_features_);
+      TransformedFilterTile<T, M, N, R, S> transformed{filter};
+      /*
+       * Here we can either write out with features or channels packed in
+       * memory. The matmul will perform best if the features are packed, as
+       * then the matmul will read this in a packed way, if instead the channels
+       * are packed then the matmul will require a transpose which may affect
+       * performance. The problem is that in this kernel we read the data with
+       * channels packed, so writing out with features packed will require a
+       * large number of strided writes.
+       *
+       * Here we write out with channels packed, and so the matmul must be
+       * called with this tensor transposed.
+       */
+      OutputData<T, M, N, R, S>::write_transformed_filter(
+          output_data, channel_idx, feature_idx, n_channels_, n_features_,
+          transformed);
+    }
+  }
+
+ private:
+  const Index n_threads_;
+  const Index n_features_;
+  const Index n_channels_;
   const read_accessor kernel_accessor_;
   write_accessor output_accessor_;
 };

@@ -45,6 +45,8 @@ struct LaunchMatmulWinograd {
   using Index = int;
   static constexpr int A = M + R - 1;
   static constexpr int B = N + S - 1;
+  static constexpr bool trans_input = false;
+  static constexpr bool trans_filter = (CType == ConvType::Forward);
   using InputTransform = winograd::ExtractInputTiles<T, M, N, R, S, CType>;
   using FilterTransform = winograd::ExtractKernelTiles<T, M, N, R, S, CType>;
   using OutputTransform = winograd::ExtractOutputTiles<T, M, N, R, S, CType>;
@@ -75,9 +77,9 @@ struct LaunchMatmulWinograd {
 
     size_t const inter_bytes = A * B * n_tiles * params.features_ * sizeof(T);
     T* const intermediate = static_cast<T*>(device.allocate_temp(inter_bytes));
-    sycl_conv::launch_batch_matmul<false, true>(
-        device, in_transform, fil_transform, intermediate, A * B,
-        n_tiles, params.channels_, params.features_);
+    sycl_conv::launch_batch_matmul<trans_input, trans_filter>(
+        device, in_transform, fil_transform, intermediate, A * B, n_tiles,
+        params.channels_, params.features_);
 
     device.deallocate_temp(fil_transform);
     device.deallocate_temp(in_transform);
