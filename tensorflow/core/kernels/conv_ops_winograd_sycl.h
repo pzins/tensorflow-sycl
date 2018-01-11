@@ -10,6 +10,36 @@
 namespace tensorflow {
 typedef Eigen::SyclDevice SYCLDevice;
 
+template <ConvType CType>
+inline SYCLConv2DParams get_winograd_params(SYCLConv2DParams params) {
+  return params;
+}
+template <>
+inline SYCLConv2DParams get_winograd_params<ConvType::InputBackprop>(
+    SYCLConv2DParams params) {
+  std::swap(params.channels_, params.features_);
+  std::swap(params.in_rows_, params.out_rows_);
+  std::swap(params.in_cols_, params.out_cols_);
+  // We need to change the padding from input padding to output padding for
+  // the winograd matmul kernel. pad_out = filt_size - 1 - pad_in
+  params.pad_rows_ = params.window_rows_ - 1 - params.pad_rows_;
+  params.pad_cols_ = params.window_cols_ - 1 - params.pad_cols_;
+  return params;
+}
+template <>
+inline SYCLConv2DParams get_winograd_params<ConvType::FilterBackprop>(
+    SYCLConv2DParams params) {
+  // Map the input dimensions to those expected in the convolution kernel.
+  const auto window_rows =
+      params.out_rows_ * params.stride_rows_ - (params.stride_rows_ - 1);
+  const auto window_cols =
+      params.out_cols_ * params.stride_cols_ - (params.stride_cols_ - 1);
+  params.out_rows_ = params.window_rows_;
+  params.out_cols_ = params.window_cols_;
+  params.window_rows_ = window_rows;
+  params.window_cols_ = window_cols;
+  return params;
+}
 template <typename T, int M, int N, int R, int S, ConvType CType>
 struct LaunchMatmulWinograd {
   using Index = int;
@@ -22,18 +52,7 @@ struct LaunchMatmulWinograd {
   static bool launch(Eigen::SyclDevice const& device, T* const output,
                      T const* const input, T const* const filter,
                      SYCLConv2DParams& params) {
-    // NOTE(jwlawson): We could specialise the launcher to only include this for
-    // the input backprop, however the rest of this function is the same between
-    // the cases and I would prefer to have less code duplication.
-    if (CType == ConvType::InputBackprop) {
-      std::swap(params.channels_, params.features_);
-      std::swap(params.in_rows_, params.out_rows_);
-      std::swap(params.in_cols_, params.out_cols_);
-      // We need to change the padding from input padding to output padding for
-      // the winograd matmul kernel. pad_out = filt_size - 1 - pad_in
-      params.pad_rows_ = params.window_rows_ - 1 - params.pad_rows_;
-      params.pad_cols_ = params.window_cols_ - 1 - params.pad_cols_;
-    }
+    params = get_winograd_params<CType>(params);
     const Index n_tile_rows = RoundRatioUpAboveZero(params.out_rows_, M);
     const Index n_tile_cols = RoundRatioUpAboveZero(params.out_cols_, N);
     const Index n_tiles = params.batch_ * n_tile_rows * n_tile_cols;
@@ -84,16 +103,7 @@ struct LaunchMatmulWinograd<T, M, N, R, S, ConvType::FilterBackprop> {
   static bool launch(Eigen::SyclDevice const& device, T* const output,
                      T const* const input, T const* const filter,
                      SYCLConv2DParams& params) {
-    // Map the input dimensions to those expected in the convolution kernel.
-    const Index window_rows =
-        params.out_rows_ * params.stride_rows_ - (params.stride_rows_ - 1);
-    const Index window_cols =
-        params.out_cols_ * params.stride_cols_ - (params.stride_cols_ - 1);
-    params.out_rows_ = params.window_rows_;
-    params.out_cols_ = params.window_cols_;
-    params.window_rows_ = window_rows;
-    params.window_cols_ = window_cols;
-
+    params = get_winograd_params<CType>(params);
     const Index n_tile_rows = RoundRatioUpAboveZero(params.window_rows_, R);
     const Index n_tile_cols = RoundRatioUpAboveZero(params.window_cols_, S);
     const Index n_tiles = params.batch_ * n_tile_rows * n_tile_cols;

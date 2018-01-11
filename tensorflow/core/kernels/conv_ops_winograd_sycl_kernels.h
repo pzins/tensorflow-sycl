@@ -376,75 +376,6 @@ struct OutputData {
     }
   }
 };
-/**
- * Kernel function object to compute the forward pass of a convolution using a
- * simple Winograd transform. This kernel will perform all the computation in
- * the convolution.
- */
-template <typename T, int M, int N, int R, int S, ConvType CType>
-struct WinogradConv {
-  using Index = int;
-  using buffer_data = uint8_t;
-  static constexpr auto read_mode = cl::sycl::access::mode::read;
-  static constexpr auto write_mode = cl::sycl::access::mode::discard_write;
-  static constexpr auto global_access = cl::sycl::access::target::global_buffer;
-  using write_accessor =
-      cl::sycl::accessor<buffer_data, 1, write_mode, global_access>;
-  using read_accessor =
-      cl::sycl::accessor<buffer_data, 1, read_mode, global_access>;
-
-  inline TF_ATTRIBUTE_ALWAYS_INLINE WinogradConv(Index const n_tiles,
-                                                 SYCLConv2DParams const& params,
-                                                 read_accessor const input,
-                                                 read_accessor const kernel,
-                                                 write_accessor output)
-      : n_tiles_{n_tiles},
-        p_{params},
-        input_accessor_{input},
-        kernel_accessor_{kernel},
-        output_accessor_{output} {}
-
-  inline TF_ATTRIBUTE_ALWAYS_INLINE void operator()(cl::sycl::item<1> item) {
-    Index index = item.get(0);
-    if (index < n_tiles_) {
-      const T* input_data = ConvertToActualTypeSycl(T, input_accessor_);
-      const T* kernel_data = ConvertToActualTypeSycl(T, kernel_accessor_);
-      T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
-
-      const Index feature = index % p_.features_;
-      const Index tile_idx = index / p_.features_;
-      const SYCL2DWindow w = p_.winograd_input_window<M, N, R, S>(
-          tile_idx, CType == ConvType::InputBackprop);
-
-      IntermediateTile<T, M, N, R, S> tmp{};
-
-      for (Index channel = 0; channel < p_.channels_; ++channel) {
-        const Index offset =
-            ((w.batch * p_.in_rows_ + w.rstart) * p_.in_cols_ + w.cstart) *
-                p_.channels_ +
-            channel;
-        InputTile<T, M, N, R, S> inp(input_data + offset, p_.in_cols_,
-                                     p_.channels_, w.rend - w.rstart,
-                                     w.cend - w.cstart, w.firstr, w.firstc);
-        FilterTile<T, M, N, R, S, CType> filter(kernel_data, channel, feature,
-                                                p_.channels_, p_.features_);
-        tmp.update(TransformedInputTile<T, M, N, R, S>{inp},
-                   TransformedFilterTile<T, M, N, R, S>{filter});
-      }
-      SYCLOutputWindow out_w = p_.winograd_output_index<M, N, R, S>(index);
-      OutputData<T, M, N, R, S>::write_output(output_data, out_w, p_.out_cols_,
-                                              p_.features_,
-                                              OutputTile<T, M, N, R, S>{tmp});
-    }
-  }
-
- private:
-  const Index n_tiles_;
-  const SYCLConv2DParams p_;
-  const read_accessor input_accessor_;
-  const read_accessor kernel_accessor_;
-  write_accessor output_accessor_;
-};
 template <typename T, int M, int N, int R, int S, ConvType CType>
 struct ExtractInputTiles {
   using Index = int;
@@ -463,6 +394,8 @@ struct ExtractInputTiles {
       write_accessor output)
       : n_threads_{n_threads},
         n_tiles_{n_tiles},
+        n_tile_rows_{RoundRatioUpAboveZero(params.out_rows_, M)},
+        n_tile_cols_{RoundRatioUpAboveZero(params.out_cols_, N)},
         p_{params},
         input_accessor_{input},
         output_accessor_{output} {}
@@ -473,21 +406,21 @@ struct ExtractInputTiles {
       const T* input_data = ConvertToActualTypeSycl(T, input_accessor_);
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
 
-      const Index n_tile_rows = RoundRatioUpAboveZero(p_.out_rows_, M);
-      const Index n_tile_cols = RoundRatioUpAboveZero(p_.out_cols_, N);
       const Index channel_idx = index % p_.channels_;
       const Index tile_idx = index / p_.channels_;
 
-      Index batch = tile_idx;
-      const Index cstart = (batch % n_tile_cols) * N - p_.pad_cols_;
-      const Index cend = std::min(cstart + N + S - 1, p_.in_cols_);
+      const Index brc_idx = tile_idx;
+      const Index br_idx = brc_idx / n_tile_cols_;
+      const Index col_idx = brc_idx % n_tile_cols_;
+      const Index cstart = col_idx * N - p_.pad_cols_;
+      const Index cend = cl::sycl::min(cstart + N + S - 1, p_.in_cols_);
       const Index firstc = cstart < 0 ? -cstart : 0;
-      batch /= n_tile_cols;
 
-      const Index rstart = (batch % n_tile_rows) * M - p_.pad_rows_;
-      const Index rend = std::min(rstart + M + R - 1, p_.in_rows_);
+      const Index batch = br_idx / n_tile_rows_;
+      const Index row_idx = br_idx % n_tile_rows_;
+      const Index rstart = row_idx * M - p_.pad_rows_;
+      const Index rend = cl::sycl::min(rstart + M + R - 1, p_.in_rows_);
       const Index firstr = rstart < 0 ? -rstart : 0;
-      batch /= n_tile_rows;
 
       const Index offset =
           ((batch * p_.in_rows_ + rstart) * p_.in_cols_ + cstart) *
@@ -506,6 +439,8 @@ struct ExtractInputTiles {
  private:
   const Index n_threads_;
   const Index n_tiles_;
+  const Index n_tile_rows_;
+  const Index n_tile_cols_;
   const SYCLConv2DParams p_;
   const read_accessor input_accessor_;
   write_accessor output_accessor_;
@@ -593,7 +528,8 @@ struct ExtractKernelTiles {
       SYCLConv2DParams const& params, read_accessor const kernel,
       write_accessor output)
       : n_threads_{n_threads},
-        p_{params},
+        n_channels_{params.channels_},
+        n_features_{params.features_},
         kernel_accessor_{kernel},
         output_accessor_{output} {}
 
@@ -603,22 +539,23 @@ struct ExtractKernelTiles {
       const T* kernel_data = ConvertToActualTypeSycl(T, kernel_accessor_);
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
 
-      const Index feature_idx = index % p_.features_;
-      const Index channel_idx = index / p_.features_;
+      const Index feature_idx = index % n_features_;
+      const Index channel_idx = index / n_features_;
 
       FilterTile<T, M, N, R, S, CType> filter(
-          kernel_data, channel_idx, feature_idx, p_.channels_, p_.features_);
+          kernel_data, channel_idx, feature_idx, n_channels_, n_features_);
       TransformedFilterTile<T, M, N, R, S> transformed{filter};
 
       OutputData<T, M, N, R, S>::write_transformed_filter(
-          output_data, channel_idx, feature_idx, p_.channels_, p_.features_,
+          output_data, channel_idx, feature_idx, n_channels_, n_features_,
           transformed);
     }
   }
 
  private:
   const Index n_threads_;
-  const SYCLConv2DParams p_;
+  const Index n_channels_;
+  const Index n_features_;
   const read_accessor kernel_accessor_;
   write_accessor output_accessor_;
 };
@@ -691,6 +628,8 @@ struct ExtractOutputTiles {
       write_accessor output)
       : n_threads_{n_threads},
         n_tiles_{n_tiles},
+        n_tile_rows_{RoundRatioUpAboveZero(params.out_rows_, M)},
+        n_tile_cols_{RoundRatioUpAboveZero(params.out_cols_, N)},
         p_{params},
         input_accessor_{input},
         output_accessor_{output} {}
@@ -706,8 +645,24 @@ struct ExtractOutputTiles {
 
       IntermediateTile<T, M, N, R, S> tmp{input_data, tile_idx, n_tiles_,
                                           feature, p_.features_};
-      SYCLOutputWindow out_w =
-          p_.winograd_output_index<M, N, R, S>(tile_idx, feature);
+
+      const Index brc_idx = tile_idx;
+      const Index br_idx = brc_idx / n_tile_cols_;
+      const Index col_idx = brc_idx % n_tile_cols_;
+      const Index col = col_idx * N;
+      const Index cend = cl::sycl::min(col + N, p_.out_cols_);
+
+      const Index batch = br_idx / n_tile_rows_;
+      const Index row_idx = br_idx % n_tile_rows_;
+      const Index row = row_idx * M;
+      const Index rend = cl::sycl::min(row + M, p_.out_rows_);
+
+      const Index offset =
+          ((batch * p_.out_rows_ + row) * p_.out_cols_ + col) * p_.features_ +
+          feature;
+
+      SYCLOutputWindow out_w{rend - row, cend - col, offset};
+
       OutputData<T, M, N, R, S>::write_output(output_data, out_w, p_.out_cols_,
                                               p_.features_,
                                               OutputTile<T, M, N, R, S>{tmp});
@@ -717,6 +672,8 @@ struct ExtractOutputTiles {
  private:
   const Index n_threads_;
   const Index n_tiles_;
+  const Index n_tile_rows_;
+  const Index n_tile_cols_;
   const SYCLConv2DParams p_;
   const read_accessor input_accessor_;
   write_accessor output_accessor_;
