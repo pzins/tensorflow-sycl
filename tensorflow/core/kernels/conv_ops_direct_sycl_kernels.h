@@ -52,7 +52,9 @@ namespace direct {
       PARAM_CONSTRUCT(dilation_rows_, params),                                \
       PARAM_CONSTRUCT(dilation_cols_, params)
 
-#define PARAMS(x) PARAM_NAME(x)
+#define PARAM(x) PARAM_NAME(x)
+#define STATIC_PARAM(name, qual) \
+  (static_##name > 0 ? static_##name : PARAM(name##_##qual))
 /**
  * SYCL kernel for naive convolution computation.
  */
@@ -65,10 +67,12 @@ struct index_div<Index, true> {
   using type = fast_div::magic_numbers<Index>;
 };
 
-template <typename T, ConvType CType, bool use_fast_div = false>
+template <typename T, ConvType CType, bool use_fast_div = false,
+          int static_window = 0, int static_stride = 0>
 struct Conv2DSYCL;
-template <typename T, bool use_fast_div>
-struct Conv2DSYCL<T, ConvType::Forward, use_fast_div> {
+template <typename T, bool use_fast_div, int static_window, int static_stride>
+struct Conv2DSYCL<T, ConvType::Forward, use_fast_div, static_window,
+                  static_stride> {
   using Index = int;
   using buffer_data = uint8_t;
   using index_div_type = typename index_div<Index, use_fast_div>::type;
@@ -103,33 +107,36 @@ struct Conv2DSYCL<T, ConvType::Forward, use_fast_div> {
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
 
       const Index brc_idx = index / div_features_;
-      const Index feature = index - brc_idx * PARAMS(features_);
+      const Index feature = index - brc_idx * PARAM(features_);
 
       const Index br_idx = brc_idx / div_out_cols_;
-      const Index col_idx = brc_idx - br_idx * PARAMS(out_cols_);
-      const Index cstart = col_idx * PARAMS(stride_cols_) - PARAMS(pad_cols_);
+      const Index col_idx = brc_idx - br_idx * PARAM(out_cols_);
+      const Index cstart =
+          col_idx * STATIC_PARAM(stride, cols_) - PARAM(pad_cols_);
 
       const Index batch = br_idx / div_out_rows_;
-      const Index row_idx = br_idx - batch * PARAMS(out_rows_);
-      const Index rstart = row_idx * PARAMS(stride_rows_) - PARAMS(pad_rows_);
+      const Index row_idx = br_idx - batch * PARAM(out_rows_);
+      const Index rstart =
+          row_idx * STATIC_PARAM(stride, rows_) - PARAM(pad_rows_);
 
       T out_val = static_cast<T>(0);
       const T* input_data_n =
           input_data +
-          batch * PARAMS(in_cols_) * PARAMS(in_rows_) * PARAMS(channels_);
+          batch * PARAM(in_cols_) * PARAM(in_rows_) * PARAM(channels_);
       for (Index r = rstart, i = 0;
-           i < PARAMS(window_rows_) && r < PARAMS(in_rows_); ++r, ++i) {
+           i < STATIC_PARAM(window, rows_) && r < PARAM(in_rows_); ++r, ++i) {
         if (r >= 0) {
           for (Index c = cstart, j = 0;
-               j < PARAMS(window_cols_) && c < PARAMS(in_cols_); ++c, ++j) {
+               j < STATIC_PARAM(window, cols_) && c < PARAM(in_cols_);
+               ++c, ++j) {
             if (c >= 0) {
-              for (Index channel = 0; channel < PARAMS(channels_); ++channel) {
+              for (Index channel = 0; channel < PARAM(channels_); ++channel) {
                 const Index idx =
-                    (r * PARAMS(in_cols_) + c) * PARAMS(channels_) + channel;
+                    (r * PARAM(in_cols_) + c) * PARAM(channels_) + channel;
                 const Index k_idx =
-                    ((i * PARAMS(window_cols_) + j) * PARAMS(channels_) +
+                    ((i * STATIC_PARAM(window, cols_) + j) * PARAM(channels_) +
                      channel) *
-                        PARAMS(features_) +
+                        PARAM(features_) +
                     feature;
                 out_val += input_data_n[idx] * kernel_data[k_idx];
               }
@@ -151,8 +158,9 @@ struct Conv2DSYCL<T, ConvType::Forward, use_fast_div> {
   const read_accessor kernel_accessor_;
   write_accessor output_accessor_;
 };
-template <typename T, bool use_fast_div>
-struct Conv2DSYCL<T, ConvType::InputBackprop, use_fast_div> {
+template <typename T, bool use_fast_div, int static_window, int static_stride>
+struct Conv2DSYCL<T, ConvType::InputBackprop, use_fast_div, static_window,
+                  static_stride> {
   using Index = int;
   using buffer_data = uint8_t;
   using index_div_type = typename index_div<Index, use_fast_div>::type;
@@ -186,57 +194,64 @@ struct Conv2DSYCL<T, ConvType::InputBackprop, use_fast_div> {
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
 
       const Index tile_idx = index / div_features_;
-      const Index feature = index - tile_idx * PARAMS(features_);
+      const Index feature = index - tile_idx * PARAM(features_);
 
       const Index brc_idx = tile_idx;
       const Index br_idx = brc_idx / div_in_cols_;
-      const Index col_idx = brc_idx - br_idx * PARAMS(in_cols_);
+      const Index col_idx = brc_idx - br_idx * PARAM(in_cols_);
       // c is the index in the padded output tensor (ie with lots of extra
       // zeros), but without the first padding. first_padded_c adds this extra
       // padding.
-      const Index c = col_idx + PARAMS(pad_cols_);
-      const Index first_padded_c = c - PARAMS(window_cols_) + 1;
+      const Index c = col_idx + PARAM(pad_cols_);
+      const Index first_padded_c = c - STATIC_PARAM(window, cols_) + 1;
       // The first and last output indices affected by this input.
-      const Index last_used_c = c / PARAMS(stride_cols_);
+      const Index last_used_c = c / STATIC_PARAM(stride, cols_);
       const Index first_used_c =
-          RoundRatioUpAboveZero(first_padded_c, PARAMS(stride_cols_));
+          RoundRatioUpAboveZero(first_padded_c, STATIC_PARAM(stride, cols_));
 
-      const Index firstc = first_used_c * PARAMS(stride_cols_) - first_padded_c;
+      const Index firstc =
+          first_used_c * STATIC_PARAM(stride, cols_) - first_padded_c;
       const Index cstart = cl::sycl::max(first_used_c, static_cast<Index>(0));
-      const Index cend = cl::sycl::min(last_used_c + 1, PARAMS(out_cols_));
+      const Index cend = cl::sycl::min(last_used_c + 1, PARAM(out_cols_));
 
       const Index batch = br_idx / div_in_rows_;
-      const Index row_idx = br_idx - batch * PARAMS(in_rows_);
-      const Index r = row_idx + PARAMS(pad_rows_);
-      const Index last_used_r = r / PARAMS(stride_rows_);
-      const Index first_padded_r = r - PARAMS(window_rows_) + 1;
+      const Index row_idx = br_idx - batch * PARAM(in_rows_);
+      const Index r = row_idx + PARAM(pad_rows_);
+      const Index last_used_r = r / STATIC_PARAM(stride, rows_);
+      const Index first_padded_r = r - STATIC_PARAM(window, rows_) + 1;
       const Index first_used_r =
-          RoundRatioUpAboveZero(first_padded_r, PARAMS(stride_rows_));
+          RoundRatioUpAboveZero(first_padded_r, STATIC_PARAM(stride, rows_));
 
-      const Index firstr = first_used_r * PARAMS(stride_rows_) - first_padded_r;
+      const Index firstr =
+          first_used_r * STATIC_PARAM(stride, rows_) - first_padded_r;
       const Index rstart = cl::sycl::max(first_used_r, static_cast<Index>(0));
-      const Index rend = cl::sycl::min(last_used_r + 1, PARAMS(out_rows_));
+      const Index rend = cl::sycl::min(last_used_r + 1, PARAM(out_rows_));
 
       T out_val = static_cast<T>(0);
       const T* input_data_n =
           input_data +
-          batch * PARAMS(out_cols_) * PARAMS(out_rows_) * PARAMS(channels_);
+          batch * PARAM(out_cols_) * PARAM(out_rows_) * PARAM(channels_);
       for (Index r = rstart, i = firstr; r < rend;
-           ++r, i += PARAMS(stride_rows_)) {
-        for (Index c = cstart, j = firstc; c < cend;
-             ++c, j += PARAMS(stride_cols_)) {
-          for (Index channel = 0; channel < PARAMS(channels_); ++channel) {
-            const Index idx =
-                (r * PARAMS(out_cols_) + c) * PARAMS(channels_) + channel;
-            const Index mirrored_row = PARAMS(window_rows_) - i - 1;
-            const Index mirrored_col = PARAMS(window_cols_) - j - 1;
-            const Index k_idx =
-                ((mirrored_row * PARAMS(window_cols_) + mirrored_col) *
-                     PARAMS(features_) +
-                 feature) *
-                    PARAMS(channels_) +
-                channel;
-            out_val += input_data_n[idx] * kernel_data[k_idx];
+           ++r, i += STATIC_PARAM(stride, rows_)) {
+        if (r >= 0) {
+          for (Index c = cstart, j = firstc; c < cend;
+               ++c, j += STATIC_PARAM(stride, cols_)) {
+            if (c >= 0) {
+              for (Index channel = 0; channel < PARAM(channels_); ++channel) {
+                const Index idx =
+                    (r * PARAM(out_cols_) + c) * PARAM(channels_) + channel;
+                const Index mirrored_row = STATIC_PARAM(window, rows_) - i - 1;
+                const Index mirrored_col = STATIC_PARAM(window, cols_) - j - 1;
+                const Index k_idx =
+                    ((mirrored_row * STATIC_PARAM(window, cols_) +
+                      mirrored_col) *
+                         PARAM(features_) +
+                     feature) *
+                        PARAM(channels_) +
+                    channel;
+                out_val += input_data_n[idx] * kernel_data[k_idx];
+              }
+            }
           }
         }
       }
@@ -258,9 +273,14 @@ struct Conv2DSYCL<T, ConvType::InputBackprop, use_fast_div> {
  * The main difference between the two backprop kernels is the way strides are
  * handled. In the filter backprop the input is strided and the kernel is not
  * whereas in the input backprop this is the other way around.
+ *
+ * For the filter backprop we are convolving the input with the output as the
+ * filter. This means that the static window sizes are actually the
+ * params.out_rows_ and params.out_cols_ rather than the params.window_*.
  */
-template <typename T, bool use_fast_div>
-struct Conv2DSYCL<T, ConvType::FilterBackprop, use_fast_div> {
+template <typename T, bool use_fast_div, int static_out, int static_stride>
+struct Conv2DSYCL<T, ConvType::FilterBackprop, use_fast_div, static_out,
+                  static_stride> {
   using Index = int;
   using buffer_data = uint8_t;
   using index_div_type = typename index_div<Index, use_fast_div>::type;
@@ -295,45 +315,45 @@ struct Conv2DSYCL<T, ConvType::FilterBackprop, use_fast_div> {
 
       const Index hwcf_idx = index;
       const Index hwc_idx = hwcf_idx / div_features_;
-      const Index feature = hwcf_idx - hwc_idx * PARAMS(features_);
+      const Index feature = hwcf_idx - hwc_idx * PARAM(features_);
       const Index hw_idx = hwc_idx / div_channels_;
-      const Index channel = hwc_idx - hw_idx * PARAMS(channels_);
+      const Index channel = hwc_idx - hw_idx * PARAM(channels_);
 
       const Index row_idx = hw_idx / div_out_cols_;
-      const Index col_idx = hw_idx - row_idx * PARAMS(out_cols_);
-      const Index cstart = col_idx - PARAMS(pad_cols_);
+      const Index col_idx = hw_idx - row_idx * STATIC_PARAM(out, cols_);
+      const Index cstart = col_idx - PARAM(pad_cols_);
       const Index cend =
-          cl::sycl::min(cstart + PARAMS(window_cols_), PARAMS(in_cols_));
+          cl::sycl::min(cstart + PARAM(window_cols_), PARAM(in_cols_));
 
-      const Index rstart = row_idx - PARAMS(pad_rows_);
+      const Index rstart = row_idx - PARAM(pad_rows_);
       const Index rend =
-          cl::sycl::min(rstart + PARAMS(window_rows_), PARAMS(in_rows_));
+          cl::sycl::min(rstart + PARAM(window_rows_), PARAM(in_rows_));
 
-      const Index filter_rows =
-          RoundRatioUpAboveZero(PARAMS(window_rows_), PARAMS(stride_rows_));
-      const Index filter_cols =
-          RoundRatioUpAboveZero(PARAMS(window_cols_), PARAMS(stride_cols_));
+      const Index filter_rows = RoundRatioUpAboveZero(
+          PARAM(window_rows_), STATIC_PARAM(stride, rows_));
+      const Index filter_cols = RoundRatioUpAboveZero(
+          PARAM(window_cols_), STATIC_PARAM(stride, cols_));
 
       T out_val = static_cast<T>(0);
       const T* input_data_n = input_data;
-      for (Index b = 0; b < PARAMS(batch_); b++) {
+      for (Index b = 0; b < PARAM(batch_); b++) {
         for (Index r = rstart, i = 0; r < rend;
-             ++i, r += PARAMS(stride_rows_)) {
+             ++i, r += STATIC_PARAM(stride, rows_)) {
           if (r >= 0) {
             for (Index c = cstart, j = 0; c < cend;
-                 ++j, c += PARAMS(stride_cols_)) {
+                 ++j, c += STATIC_PARAM(stride, cols_)) {
               if (c >= 0) {
                 const Index idx =
-                    (r * PARAMS(in_cols_) + c) * PARAMS(channels_) + channel;
+                    (r * PARAM(in_cols_) + c) * PARAM(channels_) + channel;
                 const Index k_idx = ((b * filter_rows + i) * filter_cols + j) *
-                                        PARAMS(features_) +
+                                        PARAM(features_) +
                                     feature;
                 out_val += input_data_n[idx] * kernel_data[k_idx];
               }
             }
           }
         }
-        input_data_n += PARAMS(in_cols_) * PARAMS(in_rows_) * PARAMS(channels_);
+        input_data_n += PARAM(in_cols_) * PARAM(in_rows_) * PARAM(channels_);
       }
       output_data[index] = out_val;
     }

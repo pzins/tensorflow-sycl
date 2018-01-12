@@ -95,30 +95,46 @@ struct LaunchConv2DKernel {
     auto output_buffer = device.get_sycl_buffer(output);
     auto kernel_params = get_kernel_params<CType>(params);
 
+#define LAUNCH_STATIC_CONV(use_fast_div, window, stride)                     \
+  device.sycl_queue().submit([&](cl::sycl::handler& cgh) {                   \
+    auto input_access = input_buffer.template get_access<read_mode>(cgh);    \
+    auto filter_access = filter_buffer.template get_access<read_mode>(cgh);  \
+    auto output_access = output_buffer.template get_access<write_mode>(cgh); \
+                                                                             \
+    Conv2DSYCL<T, CType, use_fast_div, window, stride> conv(                 \
+        output_size, kernel_params, input_access, filter_access,             \
+        output_access);                                                      \
+                                                                             \
+    cgh.parallel_for(cl::sycl::range<1>(n_threads), conv);                   \
+  });
+#define LAUNCH_DEFAULT_CONV(use_fast_div) LAUNCH_STATIC_CONV(use_fast_div, 0, 0)
+#define USE_STATIC_CONV(params, window, stride)                      \
+  (params.window_cols_ == window && params.window_rows_ == window && \
+   params.stride_rows_ == stride && params.stride_cols_ == stride)
+#define LAUNCH_CONV(params, use_fast_div)          \
+  if (USE_STATIC_CONV(params, 1, 1)) {             \
+    LAUNCH_STATIC_CONV(use_fast_div, 1, 1) \
+  } else if (USE_STATIC_CONV(params, 3, 1)) {      \
+    LAUNCH_STATIC_CONV(use_fast_div, 3, 1) \
+  } else if (USE_STATIC_CONV(params, 3, 2)) {      \
+    LAUNCH_STATIC_CONV(use_fast_div, 3, 2) \
+  } else if (USE_STATIC_CONV(params, 5, 1)) {      \
+    LAUNCH_STATIC_CONV(use_fast_div, 5, 1) \
+  } else if (USE_STATIC_CONV(params, 5, 2)) {      \
+    LAUNCH_STATIC_CONV(use_fast_div, 5, 2) \
+  } else {                                 \
+    LAUNCH_DEFAULT_CONV(use_fast_div)      \
+  }
+
     if (no_fast_div<CType>(kernel_params)) {
-      device.sycl_queue().submit([&](cl::sycl::handler& cgh) {
-        auto input_access = input_buffer.template get_access<read_mode>(cgh);
-        auto filter_access = filter_buffer.template get_access<read_mode>(cgh);
-        auto output_access = output_buffer.template get_access<write_mode>(cgh);
-
-        Functor conv(output_size, kernel_params, input_access, filter_access,
-                     output_access);
-
-        cgh.parallel_for(cl::sycl::range<1>(n_threads), conv);
-      });
+      LAUNCH_CONV(params, false);
     } else {
-      device.sycl_queue().submit([&](cl::sycl::handler& cgh) {
-        auto input_access = input_buffer.template get_access<read_mode>(cgh);
-        auto filter_access = filter_buffer.template get_access<read_mode>(cgh);
-        auto output_access = output_buffer.template get_access<write_mode>(cgh);
-
-        Conv2DSYCL<T, CType, true> conv(output_size, kernel_params,
-                                        input_access, filter_access,
-                                        output_access);
-
-        cgh.parallel_for(cl::sycl::range<1>(n_threads), conv);
-      });
+      LAUNCH_CONV(params, true);
     }
+#undef LAUNCH_CONV
+#undef USE_STATIC_CONV
+#undef LAUNCH_DEFAULT_CONV
+#undef LAUNCH_STATIC_CONV
   }
 };
 
