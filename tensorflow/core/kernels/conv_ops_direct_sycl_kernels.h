@@ -15,10 +15,9 @@ typedef Eigen::SyclDevice SYCLDevice;
 template <typename T>
 using fast_intdiv = fast_div::magic_numbers<T>;
 namespace direct {
-#define PARAM_NAME(x) params_##x
-
+#ifndef INJECT_CONV_PARAMS
+#define PARAM_NAME(x) param_##x
 #define PARAM_ARG(x) const Index PARAM_NAME(x)
-
 #define INJECT_CONV_PARAMS   \
   PARAM_ARG(channels_);      \
   PARAM_ARG(features_);      \
@@ -55,9 +54,6 @@ namespace direct {
 #define PARAM(x) PARAM_NAME(x)
 #define STATIC_PARAM(name, qual) \
   (static_##name > 0 ? static_##name : PARAM(name##_##qual))
-/**
- * SYCL kernel for naive convolution computation.
- */
 template <typename Index, bool use_fast_div>
 struct index_div {
   using type = Index;
@@ -66,7 +62,10 @@ template <typename Index>
 struct index_div<Index, true> {
   using type = fast_div::magic_numbers<Index>;
 };
-
+#endif  // INJECT_CONV_PARAMS
+/**
+ * SYCL kernel for naive convolution computation.
+ */
 template <typename T, ConvType CType, bool use_fast_div = false,
           int static_window = 0, int static_stride = 0>
 struct Conv2DSYCL;
@@ -233,25 +232,20 @@ struct Conv2DSYCL<T, ConvType::InputBackprop, use_fast_div, static_window,
           batch * PARAM(out_cols_) * PARAM(out_rows_) * PARAM(channels_);
       for (Index r = rstart, i = firstr; r < rend;
            ++r, i += STATIC_PARAM(stride, rows_)) {
-        if (r >= 0) {
-          for (Index c = cstart, j = firstc; c < cend;
-               ++c, j += STATIC_PARAM(stride, cols_)) {
-            if (c >= 0) {
-              for (Index channel = 0; channel < PARAM(channels_); ++channel) {
-                const Index idx =
-                    (r * PARAM(out_cols_) + c) * PARAM(channels_) + channel;
-                const Index mirrored_row = STATIC_PARAM(window, rows_) - i - 1;
-                const Index mirrored_col = STATIC_PARAM(window, cols_) - j - 1;
-                const Index k_idx =
-                    ((mirrored_row * STATIC_PARAM(window, cols_) +
-                      mirrored_col) *
-                         PARAM(features_) +
-                     feature) *
-                        PARAM(channels_) +
-                    channel;
-                out_val += input_data_n[idx] * kernel_data[k_idx];
-              }
-            }
+        for (Index c = cstart, j = firstc; c < cend;
+             ++c, j += STATIC_PARAM(stride, cols_)) {
+          for (Index channel = 0; channel < PARAM(channels_); ++channel) {
+            const Index idx =
+                (r * PARAM(out_cols_) + c) * PARAM(channels_) + channel;
+            const Index mirrored_row = STATIC_PARAM(window, rows_) - i - 1;
+            const Index mirrored_col = STATIC_PARAM(window, cols_) - j - 1;
+            const Index k_idx =
+                ((mirrored_row * STATIC_PARAM(window, cols_) + mirrored_col) *
+                     PARAM(features_) +
+                 feature) *
+                    PARAM(channels_) +
+                channel;
+            out_val += input_data_n[idx] * kernel_data[k_idx];
           }
         }
       }
