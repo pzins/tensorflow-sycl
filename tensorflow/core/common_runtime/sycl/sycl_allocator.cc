@@ -71,7 +71,7 @@ void SYCLAllocator::GetStats(AllocatorStats* stats) {
   *stats = stats_;
 }
 
-void SYCLAllocator::ClearStats() override {
+void SYCLAllocator::ClearStats() {
   mutex_lock l(mu_);
   stats_.num_allocs = 0;
   stats_.max_bytes_in_use = stats_.bytes_in_use;
