@@ -34,9 +34,6 @@ limitations under the License.
 namespace tensorflow {
 using CPUDevice = Eigen::ThreadPoolDevice;
 using GPUDevice = Eigen::GpuDevice;
-#ifdef TENSORFLOW_USE_SYCL
-using SYCLDevice = Eigen::SyclDevice;
-#endif  // TENSORFLOW_USE_SYCL
 
 namespace functor {
 
@@ -48,8 +45,8 @@ struct FusedBatchNorm;
 template <typename Device, typename T, typename U>
 struct FusedBatchNormGrad;
 
-template <typename Device, typename T, typename U>
-struct FusedBatchNorm {
+template <typename T, typename U>
+struct FusedBatchNorm<CPUDevice, T, U> {
   void operator()(OpKernelContext* context, const Tensor& x_input,
                   const Tensor& scale_input, const Tensor& offset_input,
                   const Tensor& estimated_mean_input,
@@ -73,7 +70,7 @@ struct FusedBatchNorm {
     typename TTypes<U>::Vec saved_mean(saved_mean_output->vec<U>());
     typename TTypes<U>::Vec saved_var(saved_var_output->vec<U>());
 
-    const Device& d = context->eigen_device<Device>();
+    const CPUDevice& d = context->eigen_device<CPUDevice>();
 
     const int depth = x.dimension(3);
     const int size = x.size();
@@ -94,46 +91,30 @@ struct FusedBatchNorm {
 
     auto x_rest_by_depth = x.reshape(rest_by_depth).template cast<U>();
     const int rest_size_minus_one = (rest_size > 1) ? (rest_size - 1) : 1;
+    U rest_size_inv = static_cast<U>(1.0f / static_cast<U>(rest_size));
     // This adjustment is for Bessel's correction
     U rest_size_adjust =
         static_cast<U>(rest_size) / static_cast<U>(rest_size_minus_one);
 
-#ifdef TENSORFLOW_USE_SYCL
-    Tensor mean_tmp;
-    Tensor variance_tmp;
-    OP_REQUIRES_OK(context, context->allocate_temp(
-                                DataTypeToEnum<U>::value,
-                                TensorShape({depth}),
-                                &mean_tmp));
-    OP_REQUIRES_OK(context, context->allocate_temp(
-                                DataTypeToEnum<U>::value,
-                                TensorShape({depth}),
-                                &variance_tmp));
-
-    auto mean = mean_tmp.flat<U>();
-    auto variance = variance_tmp.flat<U>();
-#else
     Eigen::Tensor<U, 1, Eigen::RowMajor> mean(depth);
     Eigen::Tensor<U, 1, Eigen::RowMajor> variance(depth);
-#endif  // TENSORFLOW_USE_SYCL
-
     if (is_training) {
-      mean.device(d) = x_rest_by_depth.mean(reduce_dims);
-      d.memcpy(batch_mean.data(), mean.data(), mean.size() * sizeof(U));
-      d.memcpy(saved_mean.data(), mean.data(), mean.size() * sizeof(U));
+      mean.device(d) = (x_rest_by_depth.sum(reduce_dims) * rest_size_inv);
+      batch_mean.device(d) = mean;
+      saved_mean.device(d) = mean;
     } else {
-      d.memcpy(mean.data(), estimated_mean.data(), estimated_mean.size() * sizeof(U));
+      mean.device(d) = estimated_mean;
     }
 
     auto x_centered =
-        (x_rest_by_depth - mean.reshape(one_by_depth).broadcast(bcast_spec)).eval();
+        x_rest_by_depth - mean.reshape(one_by_depth).broadcast(bcast_spec);
 
     if (is_training) {
-      variance.device(d) = x_centered.square().mean(reduce_dims);
+      variance.device(d) = x_centered.square().sum(reduce_dims) * rest_size_inv;
       batch_var.device(d) = variance * rest_size_adjust;
-      d.memcpy(saved_var.data(), variance.data(), variance.size() * sizeof(U));
+      saved_var.device(d) = variance;
     } else {
-      d.memcpy(variance.data(), estimated_variance.data(), estimated_variance.size() * sizeof(U));
+      variance.device(d) = estimated_variance;
     }
 
     auto scaling_factor = ((variance + epsilon).rsqrt() * scale)
@@ -148,8 +129,8 @@ struct FusedBatchNorm {
   }
 };
 
-template <typename Device, typename T, typename U>
-struct FusedBatchNormGrad {
+template <typename T, typename U>
+struct FusedBatchNormGrad<CPUDevice, T, U> {
   void operator()(OpKernelContext* context, const Tensor& y_backprop_input,
                   const Tensor& x_input, const Tensor& scale_input,
                   const Tensor& mean_input, const Tensor& variance_input,
@@ -178,7 +159,7 @@ struct FusedBatchNormGrad {
     //                  (x - mean(x)) * rsqrt(variance + epsilon))
     // offset_backprop = sum(y_backprop)
 
-    const Device& d = context->eigen_device<Device>();
+    const CPUDevice& d = context->eigen_device<CPUDevice>();
     const int depth = x.dimension(3);
     const int size = x.size();
     const int rest_size = size / depth;
@@ -205,7 +186,7 @@ struct FusedBatchNormGrad {
     auto coef0 = (variance + epsilon).rsqrt();
     auto coef0_rest_by_depth =
         coef0.eval().reshape(one_by_depth).broadcast(bcast_spec);
-    auto x_scaled = (x_centered * coef0_rest_by_depth).eval();
+    auto x_scaled = x_centered * coef0_rest_by_depth;
 
     auto y_backprop_rest_by_depth =
         y_backprop.eval().reshape(rest_by_depth).template cast<U>();
@@ -594,41 +575,6 @@ class FusedBatchNormOp : public OpKernel {
   bool is_training_;
 };
 
-namespace {
-
-template <typename Device>
-void FillZeros(const Device& d, Tensor* t);
-
-#if GOOGLE_CUDA
-template <>
-void FillZeros<GPUDevice>(const GPUDevice& d, Tensor* t) {
-  cudaMemset(const_cast<char*>(t->tensor_data().data()), 0,
-             t->tensor_data().size());
-}
-#endif
-
-#ifdef TENSORFLOW_USE_SYCL
-template <>
-void FillZeros<SYCLDevice>(const SYCLDevice& d, Tensor* t) {
-  auto buffer = d.get_sycl_buffer(t->tensor_data().data());
-
-  d.sycl_queue().submit([&](cl::sycl::handler& cgh) {
-    auto access =
-        buffer.template get_access<cl::sycl::access::mode::write>(cgh);
-    const unsigned char val = 0;
-    cgh.fill(access, val);
-  });
-}
-#endif  // TENSORFLOW_USE_SYCL
-
-template <>
-void FillZeros<CPUDevice>(const CPUDevice& d, Tensor* t) {
-  memset(const_cast<char*>(t->tensor_data().data()), 0,
-         t->tensor_data().size());
-}
-
-}  // namespace
-
 template <typename Device, typename T, typename U>
 class FusedBatchNormGradOp : public OpKernel {
  public:
@@ -656,8 +602,6 @@ class FusedBatchNormGradOp : public OpKernel {
     // The Eigen implementation saves variance in the forward pass, while cuDNN
     // saves inverted variance.
     const Tensor& saved_maybe_inv_var_or_pop_var = context->input(4);
-
-    Device dev = context->eigen_device<Device>();
 
     OP_REQUIRES(context, y_backprop.dims() == 4,
                 errors::InvalidArgument("input must be 4-dimensional",
@@ -694,17 +638,18 @@ class FusedBatchNormGradOp : public OpKernel {
     Tensor* placeholder_1 = nullptr;
     OP_REQUIRES_OK(
         context, context->allocate_output(3, TensorShape({}), &placeholder_1));
-    FillZeros<Device>(dev, placeholder_1);
+    functor::SetZeroFunctor<Device, float> f;
+    f(context->eigen_device<Device>(), placeholder_1->flat<U>());
     Tensor* placeholder_2 = nullptr;
     OP_REQUIRES_OK(
         context, context->allocate_output(4, TensorShape({}), &placeholder_2));
-    FillZeros<Device>(dev, placeholder_2);
+    f(context->eigen_device<Device>(), placeholder_2->flat<U>());
 
     // If input is empty, set gradients w.r.t scale/offset to zero.
     if (x.shape().num_elements() == 0) {
       functor::SetZeroFunctor<Device, U> f;
-      f(dev, scale_backprop->flat<U>());
-      f(dev, offset_backprop->flat<U>());
+      f(context->eigen_device<Device>(), scale_backprop->flat<U>());
+      f(context->eigen_device<Device>(), offset_backprop->flat<U>());
       return;
     }
 
@@ -728,7 +673,7 @@ class FusedBatchNormGradOp : public OpKernel {
                      context->allocate_temp(DataTypeToEnum<U>::value,
                                             scale_offset_shape, &scratch2));
       functor::FusedBatchNormFreezeGrad<Device, T, U>()(
-          dev, y_backprop, x, scale,
+          context->eigen_device<Device>(), y_backprop, x, scale,
           saved_mean_or_pop_mean, saved_maybe_inv_var_or_pop_var, epsilon_,
           x_backprop, scale_backprop, offset_backprop, scratch1.vec<U>(),
           scratch2.vec<U>());
@@ -808,28 +753,5 @@ REGISTER_KERNEL_BUILDER(Name("FusedBatchNormGradV2")
                         FusedBatchNormGradOp<GPUDevice, Eigen::half, float>);
 
 #endif
-
-#ifdef TENSORFLOW_USE_SYCL
-REGISTER_KERNEL_BUILDER(
-    Name("FusedBatchNorm").Device(DEVICE_SYCL).TypeConstraint<float>("T"),
-    FusedBatchNormOp<SYCLDevice, float, float>);
-
-REGISTER_KERNEL_BUILDER(
-    Name("FusedBatchNormGrad").Device(DEVICE_SYCL).TypeConstraint<float>("T"),
-    FusedBatchNormGradOp<SYCLDevice, float, float>);
-
-REGISTER_KERNEL_BUILDER(Name("FusedBatchNormV2")
-                            .Device(DEVICE_SYCL)
-                            .TypeConstraint<float>("T")
-                            .TypeConstraint<float>("U"),
-                        FusedBatchNormOp<SYCLDevice, float, float>);
-
-REGISTER_KERNEL_BUILDER(Name("FusedBatchNormGradV2")
-                            .Device(DEVICE_SYCL)
-                            .TypeConstraint<float>("T")
-                            .TypeConstraint<float>("U"),
-                        FusedBatchNormGradOp<SYCLDevice, float, float>);
-
-#endif  // TENSORFLOW_USE_SYCL
 
 }  // namespace tensorflow
