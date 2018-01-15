@@ -73,15 +73,17 @@ enum class DataLayout {
 };
 template <DataLayout D>
 inline int TensorIndex(int batch, int row, int col, int channel, int n_rows,
-                int n_cols, int n_channels);
+                       int n_cols, int n_channels);
 template <>
-inline int TensorIndex<DataLayout::NHWC>(int batch, int row, int col, int channel,
-                                  int n_rows, int n_cols, int n_channels) {
+inline int TensorIndex<DataLayout::NHWC>(int batch, int row, int col,
+                                         int channel, int n_rows, int n_cols,
+                                         int n_channels) {
   return ((batch * n_rows + row) * n_cols + col) * n_channels + channel;
 }
 template <>
-inline int TensorIndex<DataLayout::NCHW>(int batch, int row, int col, int channel,
-                                  int n_rows, int n_cols, int n_channels) {
+inline int TensorIndex<DataLayout::NCHW>(int batch, int row, int col,
+                                         int channel, int n_rows, int n_cols,
+                                         int n_channels) {
   return ((batch * n_channels + channel) * n_rows + row) * n_cols + col;
 }
 /** The different algorithms supported to compute convolutions. */
@@ -470,6 +472,7 @@ static void launch_matmul(Eigen::SyclDevice const& device, T const* const lhs,
                           Index const m, Index const k, Index const n) {
   static constexpr auto lhs_dim = trans_lhs ? 0 : 1;
   static constexpr auto rhs_dim = trans_rhs ? 1 : 0;
+  static constexpr auto max_m_size = std::numeric_limits<int>::max();
   using ConstTensorType =
       Eigen::Tensor<T const, 2, Eigen::RowMajor, Eigen::DenseIndex>;
   using ConstTensor = Eigen::TensorMap<ConstTensorType, Eigen::Aligned>;
@@ -479,19 +482,44 @@ static void launch_matmul(Eigen::SyclDevice const& device, T const* const lhs,
   using ContractDims =
       Eigen::IndexPairList<Eigen::type2indexpair<lhs_dim, rhs_dim>>;
 
-  TensorShape const lhs_shape{trans_lhs ? k : m, trans_lhs ? m : k};
-  TensorShape const rhs_shape{trans_rhs ? n : k, trans_rhs ? k : n};
-  TensorShape const out_shape{m, n};
+  if (trans_lhs || trans_rhs) {
+    TensorShape const lhs_shape{trans_lhs ? k : m, trans_lhs ? m : k};
+    TensorShape const rhs_shape{trans_rhs ? n : k, trans_rhs ? k : n};
+    TensorShape const out_shape{m, n};
 
-  ConstTensor lhs_tensor{lhs, lhs_shape};
-  ConstTensor rhs_tensor{rhs, rhs_shape};
-  Tensor out_tensor{output, out_shape};
-
-  if (alpha == static_cast<T>(0)) {
-    out_tensor.device(device) = lhs_tensor.contract(rhs_tensor, ContractDims{});
+    ConstTensor lhs_tensor{lhs, lhs_shape};
+    ConstTensor rhs_tensor{rhs, rhs_shape};
+    Tensor out_tensor{output, out_shape};
+    if (alpha == static_cast<T>(0)) {
+      out_tensor.device(device) =
+          lhs_tensor.contract(rhs_tensor, ContractDims{});
+    } else {
+      out_tensor.device(device) =
+          alpha * out_tensor + lhs_tensor.contract(rhs_tensor, ContractDims{});
+    }
   } else {
-    out_tensor.device(device) =
-        alpha * out_tensor + lhs_tensor.contract(rhs_tensor, ContractDims{});
+    int m_done = 0;
+    while (m_done < m) {
+      int m_this_time = m - m_done > max_m_size ? max_m_size : m - m_done;
+      int lhs_offset = m_done * k;
+      int out_offset = m_done * n;
+      TensorShape const lhs_shape{m_this_time, k};
+      TensorShape const rhs_shape{k, n};
+      TensorShape const out_shape{m_this_time, n};
+
+      ConstTensor lhs_tensor{lhs + lhs_offset, lhs_shape};
+      ConstTensor rhs_tensor{rhs, rhs_shape};
+      Tensor out_tensor{output + out_offset, out_shape};
+      if (alpha == static_cast<T>(0)) {
+        out_tensor.device(device) =
+            lhs_tensor.contract(rhs_tensor, ContractDims{});
+      } else {
+        out_tensor.device(device) =
+            alpha * out_tensor +
+            lhs_tensor.contract(rhs_tensor, ContractDims{});
+      }
+      m_done += m_this_time;
+    }
   }
 }
 template <bool trans_lhs, bool trans_rhs, typename T>
