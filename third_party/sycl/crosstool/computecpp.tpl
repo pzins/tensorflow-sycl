@@ -98,20 +98,6 @@ def useDriver(compiler_flags):
 
   x = call([COMPUTECPP_DRIVER] + computecpp_device_compiler_flags)
 
-  # FIXME(lukeiwanski): throw the sycl line from that dep file
-  # that will be fixed in next driver
-  dep_file_index = compiler_flags.index('-MF') + 1
-  dep_file_name = compiler_flags[dep_file_index]
-
-  f = open(dep_file_name,"r+")
-  d = f.readlines()
-  f.seek(0)
-  for i in d:
-      if ".sycl" not in i:
-          f.write(i)
-  f.truncate()
-  f.close()
-
   return x
 
 def main():
