@@ -9,13 +9,40 @@
 
 namespace tensorflow {
 typedef Eigen::SyclDevice SYCLDevice;
-
+namespace winograd {
+struct TileInfo {
+  int rows;
+  int cols;
+  int number;
+};
 template <ConvType CType>
-inline SYCLConv2DParams get_winograd_params(SYCLConv2DParams params) {
+inline TileInfo get_tile_info(SYCLConv2DParams const& params, int out_tile_rows,
+                              int out_tile_cols) {
+  const int n_tile_rows =
+      RoundRatioUpAboveZero(params.out_rows_, out_tile_rows);
+  const int n_tile_cols =
+      RoundRatioUpAboveZero(params.out_cols_, out_tile_cols);
+  const int n_tiles = params.batch_ * n_tile_rows * n_tile_cols;
+  const TileInfo result{n_tile_rows, n_tile_cols, n_tiles};
+  return result;
+}
+template <>
+inline TileInfo get_tile_info<ConvType::FilterBackprop>(
+    SYCLConv2DParams const& params, int out_tile_rows, int out_tile_cols) {
+  const int n_tile_rows =
+      RoundRatioUpAboveZero(params.window_rows_, out_tile_rows);
+  const int n_tile_cols =
+      RoundRatioUpAboveZero(params.window_cols_, out_tile_cols);
+  const int n_tiles = params.batch_ * n_tile_rows * n_tile_cols;
+  const TileInfo result{n_tile_rows, n_tile_cols, n_tiles};
+  return result;
+}
+template <ConvType CType>
+inline SYCLConv2DParams get_params(SYCLConv2DParams params) {
   return params;
 }
 template <>
-inline SYCLConv2DParams get_winograd_params<ConvType::InputBackprop>(
+inline SYCLConv2DParams get_params<ConvType::InputBackprop>(
     SYCLConv2DParams params) {
   std::swap(params.channels_, params.features_);
   std::swap(params.in_rows_, params.out_rows_);
@@ -27,7 +54,7 @@ inline SYCLConv2DParams get_winograd_params<ConvType::InputBackprop>(
   return params;
 }
 template <>
-inline SYCLConv2DParams get_winograd_params<ConvType::FilterBackprop>(
+inline SYCLConv2DParams get_params<ConvType::FilterBackprop>(
     SYCLConv2DParams params) {
   // Map the input dimensions to those expected in the convolution kernel.
   const auto window_rows =
@@ -40,6 +67,7 @@ inline SYCLConv2DParams get_winograd_params<ConvType::FilterBackprop>(
   params.window_cols_ = window_cols;
   return params;
 }
+}  // namespace winograd
 template <typename T, int M, int N, int R, int S, ConvType CType>
 struct LaunchMatmulWinograd {
   using Index = int;
@@ -54,39 +82,42 @@ struct LaunchMatmulWinograd {
   static bool launch(Eigen::SyclDevice const& device, T* const output,
                      T const* const input, T const* const filter,
                      SYCLConv2DParams& params) {
-    params = get_winograd_params<CType>(params);
-    const Index n_tile_rows = RoundRatioUpAboveZero(params.out_rows_, M);
-    const Index n_tile_cols = RoundRatioUpAboveZero(params.out_cols_, N);
-    const Index n_tiles = params.batch_ * n_tile_rows * n_tile_cols;
+    params = winograd::get_params<CType>(params);
+    const winograd::TileInfo tile_info =
+        winograd::get_tile_info<CType>(params, M, N);
 
     size_t const in_transform_bytes =
-        A * B * n_tiles * params.channels_ * sizeof(T);
+        A * B * tile_info.number * params.channels_ * sizeof(T);
     T* const in_transform =
         static_cast<T*>(device.allocate_temp(in_transform_bytes));
-    const Index in_transform_items = n_tiles * params.channels_;
+    const Index in_transform_items = tile_info.number * params.channels_;
     sycl_conv::launch_transform<InputTransform>(
-        device, input, in_transform, in_transform_items, params, n_tiles);
+        device, input, in_transform, in_transform_items, params,
+        tile_info.number, tile_info.rows, tile_info.cols);
 
     size_t const fil_transform_bytes =
         A * B * params.channels_ * params.features_ * sizeof(T);
     T* const fil_transform =
         static_cast<T*>(device.allocate_temp(fil_transform_bytes));
     const Index fil_transform_items = params.features_ * params.channels_;
-    sycl_conv::launch_transform<FilterTransform>(
-        device, filter, fil_transform, fil_transform_items, params, n_tiles);
+    sycl_conv::launch_transform<FilterTransform>(device, filter, fil_transform,
+                                                 fil_transform_items, params,
+                                                 tile_info.number);
 
-    size_t const inter_bytes = A * B * n_tiles * params.features_ * sizeof(T);
+    size_t const inter_bytes =
+        A * B * tile_info.number * params.features_ * sizeof(T);
     T* const intermediate = static_cast<T*>(device.allocate_temp(inter_bytes));
     sycl_conv::launch_batch_matmul<trans_input, trans_filter>(
-        device, in_transform, fil_transform, intermediate, A * B, n_tiles,
-        params.channels_, params.features_);
+        device, in_transform, fil_transform, intermediate, A * B,
+        tile_info.number, params.channels_, params.features_);
 
     device.deallocate_temp(fil_transform);
     device.deallocate_temp(in_transform);
 
-    const Index n_out_items = n_tiles * params.features_;
-    sycl_conv::launch_transform<OutputTransform>(device, intermediate, output,
-                                                 n_out_items, params, n_tiles);
+    const Index n_out_items = tile_info.number * params.features_;
+    sycl_conv::launch_transform<OutputTransform>(
+        device, intermediate, output, n_out_items, params, tile_info.number,
+        tile_info.rows, tile_info.cols);
 
     device.deallocate_temp(intermediate);
     return true;
@@ -105,27 +136,27 @@ struct LaunchMatmulWinograd<T, M, N, R, S, ConvType::FilterBackprop> {
   static bool launch(Eigen::SyclDevice const& device, T* const output,
                      T const* const input, T const* const filter,
                      SYCLConv2DParams& params) {
-    params = get_winograd_params<CType>(params);
-    const Index n_tile_rows = RoundRatioUpAboveZero(params.window_rows_, R);
-    const Index n_tile_cols = RoundRatioUpAboveZero(params.window_cols_, S);
-    const Index n_tiles = params.batch_ * n_tile_rows * n_tile_cols;
+    params = winograd::get_params<CType>(params);
+    const winograd::TileInfo tile_info =
+        winograd::get_tile_info<CType>(params, R, S);
 
     const size_t in_transform_bytes =
-        A * B * n_tiles * params.channels_ * sizeof(T);
+        A * B * tile_info.number * params.channels_ * sizeof(T);
     T* const in_transform =
         static_cast<T*>(device.allocate_temp(in_transform_bytes));
-    const Index in_transform_items = n_tiles * params.channels_;
-    sycl_conv::launch_transform<InputTransform>(device, input, in_transform,
-                                                in_transform_items, params,
-                                                n_tile_rows, n_tile_cols);
+    const Index in_transform_items = tile_info.number * params.channels_;
+    sycl_conv::launch_transform<InputTransform>(
+        device, input, in_transform, in_transform_items, params,
+        tile_info.number, tile_info.rows, tile_info.cols);
 
     size_t const fil_transform_bytes =
-        A * B * n_tiles * params.features_ * sizeof(T);
+        A * B * tile_info.number * params.features_ * sizeof(T);
     T* const fil_transform =
         static_cast<T*>(device.allocate_temp(fil_transform_bytes));
-    const Index fil_transform_items = params.features_ * n_tiles;
+    const Index fil_transform_items = params.features_ * tile_info.number;
     sycl_conv::launch_transform<FilterTransform>(
-        device, filter, fil_transform, fil_transform_items, params, n_tiles);
+        device, filter, fil_transform, fil_transform_items, params,
+        tile_info.number, tile_info.rows, tile_info.cols);
 
     size_t const n_inter_bytes =
         A * B * params.channels_ * params.features_ * sizeof(T);
@@ -133,14 +164,15 @@ struct LaunchMatmulWinograd<T, M, N, R, S, ConvType::FilterBackprop> {
         static_cast<T*>(device.allocate_temp(n_inter_bytes));
     sycl_conv::launch_batch_matmul<true, false>(
         device, in_transform, fil_transform, intermediate, A * B,
-        params.channels_, n_tiles, params.features_);
+        params.channels_, tile_info.number, params.features_);
 
     device.deallocate_temp(fil_transform);
     device.deallocate_temp(in_transform);
 
     const Index out_transform_items = params.channels_ * params.features_;
-    sycl_conv::launch_transform<OutputTransform>(
-        device, intermediate, output, out_transform_items, params, n_tiles);
+    sycl_conv::launch_transform<OutputTransform>(device, intermediate, output,
+                                                 out_transform_items, params,
+                                                 tile_info.number);
 
     device.deallocate_temp(intermediate);
     return true;

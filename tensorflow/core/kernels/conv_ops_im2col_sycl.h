@@ -297,8 +297,11 @@ struct LaunchIm2Col<T, ConvType::FilterBackprop> {
         sycl_conv::launch_matmul<false, false>(
             device, transform, filter + out_offset, output, static_cast<T>(1),
             n_tiles, tile_size, params.features_);
+        // For Eigen, this matmul with non-zero alpha will trigger an
+        // allocation. We need to ensure that we synchronize here to prevent
+        // allocation failures with large buffers.
+        device.synchronize();
       }
-      device.synchronize();
     }
     // At the moment we have to explicitly wait here to ensure that the device
     // queue is cleared before enqueuing the kernels which use huge buffers so

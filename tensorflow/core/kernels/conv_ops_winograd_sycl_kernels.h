@@ -5,6 +5,8 @@
 #ifndef TENSORFLOW_KERNELS_CONV_OPS_WINOGRAD_SYCL_KERNELS_H_
 #define TENSORFLOW_KERNELS_CONV_OPS_WINOGRAD_SYCL_KERNELS_H_
 
+#include "tensorflow/core/kernels/conv_ops_sycl_kernel_helpers.h"
+
 namespace tensorflow {
 namespace winograd {
 
@@ -394,9 +396,13 @@ struct ExtractInputTiles {
       write_accessor output)
       : n_elems_{params.channels_ * n_tile_cols * n_tile_rows * params.batch_},
         n_tiles_{n_tiles},
-        n_tile_rows_{RoundRatioUpAboveZero(params.out_rows_, M)},
-        n_tile_cols_{RoundRatioUpAboveZero(params.out_cols_, N)},
-        p_{params},
+        n_tile_rows_{n_tile_rows},
+        n_tile_cols_{n_tile_cols},
+        n_in_cols_{params.in_cols_},
+        n_in_rows_{params.in_rows_},
+        n_channels_{params.channels_},
+        n_pad_cols_{params.pad_cols_},
+        n_pad_rows_{params.pad_rows_},
         input_accessor_{input},
         output_accessor_{output} {}
 
@@ -406,33 +412,35 @@ struct ExtractInputTiles {
       const T* input_data = ConvertToActualTypeSycl(T, input_accessor_);
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
 
-      const Index channel_idx = index % p_.channels_;
-      const Index tile_idx = index / p_.channels_;
+      const helpers::TensorIndex2D tile_channel_idx =
+          helpers::unflatten2d<Index, false>(index, n_channels_, n_channels_);
+      const Index tile_idx = tile_channel_idx.s0;
+      const Index channel_idx = tile_channel_idx.s1;
 
-      const Index brc_idx = tile_idx;
-      const Index br_idx = brc_idx / n_tile_cols_;
-      const Index col_idx = brc_idx % n_tile_cols_;
-      const Index batch = br_idx / n_tile_rows_;
-      const Index row_idx = br_idx % n_tile_rows_;
+      const helpers::TensorIndex3D tile_tensor_idx =
+          helpers::unflatten3d<Index, false>(
+              tile_idx, n_tile_rows_, n_tile_rows_, n_tile_cols_, n_tile_cols_);
+      const Index col_idx = tile_tensor_idx.s2;
+      const Index row_idx = tile_tensor_idx.s1;
+      const Index batch = tile_tensor_idx.s0;
 
-      const Index cstart = col_idx * N - p_.pad_cols_;
-      const Index cend = cl::sycl::min(cstart + N + S - 1, p_.in_cols_);
+      const Index cstart = col_idx * N - n_pad_cols_;
+      const Index cend = cl::sycl::min(cstart + N + S - 1, n_in_cols_);
       const Index firstc = cstart < 0 ? -cstart : 0;
 
-      const Index rstart = row_idx * M - p_.pad_rows_;
-      const Index rend = cl::sycl::min(rstart + M + R - 1, p_.in_rows_);
+      const Index rstart = row_idx * M - n_pad_rows_;
+      const Index rend = cl::sycl::min(rstart + M + R - 1, n_in_rows_);
       const Index firstr = rstart < 0 ? -rstart : 0;
 
       const Index offset =
-          ((batch * p_.in_rows_ + rstart) * p_.in_cols_ + cstart) *
-              p_.channels_ +
+          ((batch * n_in_rows_ + rstart) * n_in_cols_ + cstart) * n_channels_ +
           channel_idx;
-      InputTile<T, M, N, R, S> inp(input_data + offset, p_.in_cols_,
-                                   p_.channels_, rend - rstart, cend - cstart,
-                                   firstr, firstc);
+      InputTile<T, M, N, R, S> inp(input_data + offset, n_in_cols_, n_channels_,
+                                   rend - rstart, cend - cstart, firstr,
+                                   firstc);
 
       OutputData<T, M, N, R, S>::write_transformed_input(
-          output_data, tile_idx, channel_idx, n_tiles_, p_.channels_,
+          output_data, tile_idx, channel_idx, n_tiles_, n_channels_,
           TransformedInputTile<T, M, N, R, S>{inp});
     }
   }
@@ -442,7 +450,11 @@ struct ExtractInputTiles {
   const Index n_tiles_;
   const Index n_tile_rows_;
   const Index n_tile_cols_;
-  const SYCLConv2DParams p_;
+  const Index n_in_cols_;
+  const Index n_in_rows_;
+  const Index n_channels_;
+  const Index n_pad_cols_;
+  const Index n_pad_rows_;
   const read_accessor input_accessor_;
   write_accessor output_accessor_;
 };
@@ -463,9 +475,14 @@ struct ExtractInputTiles<T, M, N, R, S, ConvType::FilterBackprop> {
       SYCLConv2DParams const& params, read_accessor const input,
       write_accessor output)
       : n_elems_{params.channels_ * n_tile_cols * n_tile_rows * params.batch_},
+        n_tiles_{n_tiles},
         n_tile_rows_{n_tile_rows},
         n_tile_cols_{n_tile_cols},
-        p_{params},
+        n_in_cols_{params.in_cols_},
+        n_in_rows_{params.in_rows_},
+        n_channels_{params.channels_},
+        n_pad_cols_{params.pad_cols_},
+        n_pad_rows_{params.pad_rows_},
         input_accessor_{input},
         output_accessor_{output} {}
 
@@ -475,41 +492,49 @@ struct ExtractInputTiles<T, M, N, R, S, ConvType::FilterBackprop> {
       const T* input_data = ConvertToActualTypeSycl(T, input_accessor_);
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
 
-      const Index channel_idx = index % p_.channels_;
-      const Index tile_idx = index / p_.channels_;
-      const Index col_idx = tile_idx % n_tile_cols_;
-      const Index br_idx = tile_idx / n_tile_cols_;
-      const Index row_idx = br_idx % n_tile_rows_;
-      const Index batch = br_idx / n_tile_rows_;
+      const helpers::TensorIndex2D tile_channel_idx =
+          helpers::unflatten2d<Index, false>(index, n_channels_, n_channels_);
+      const Index tile_idx = tile_channel_idx.s0;
+      const Index channel_idx = tile_channel_idx.s1;
 
-      const Index cstart = col_idx * S - p_.pad_cols_;
-      const Index cend = std::min(cstart + N + S - 1, p_.in_cols_);
+      const helpers::TensorIndex3D tile_tensor_idx =
+          helpers::unflatten3d<Index, false>(
+              tile_idx, n_tile_rows_, n_tile_rows_, n_tile_cols_, n_tile_cols_);
+      const Index col_idx = tile_tensor_idx.s2;
+      const Index row_idx = tile_tensor_idx.s1;
+      const Index batch = tile_tensor_idx.s0;
+
+      const Index cstart = col_idx * S - n_pad_cols_;
+      const Index cend = std::min(cstart + N + S - 1, n_in_cols_);
       const Index firstc = cstart < 0 ? -cstart : 0;
 
-      const Index rstart = row_idx * R - p_.pad_rows_;
-      const Index rend = std::min(rstart + M + R - 1, p_.in_rows_);
+      const Index rstart = row_idx * R - n_pad_rows_;
+      const Index rend = std::min(rstart + M + R - 1, n_in_rows_);
       const Index firstr = rstart < 0 ? -rstart : 0;
 
       const Index offset =
-          ((batch * p_.in_rows_ + rstart) * p_.in_cols_ + cstart) *
-              p_.channels_ +
+          ((batch * n_in_rows_ + rstart) * n_in_cols_ + cstart) * n_channels_ +
           channel_idx;
-      InputTile<T, M, N, R, S> inp(input_data + offset, p_.in_cols_,
-                                   p_.channels_, rend - rstart, cend - cstart,
-                                   firstr, firstc);
+      InputTile<T, M, N, R, S> inp(input_data + offset, n_in_cols_, n_channels_,
+                                   rend - rstart, cend - cstart, firstr,
+                                   firstc);
       TransformedInputTile<T, M, N, R, S> trans{inp};
 
-      const Index n_tiles = p_.batch_ * n_tile_rows_ * n_tile_cols_;
       OutputData<T, M, N, R, S>::write_transformed_input(
-          output_data, tile_idx, channel_idx, n_tiles, p_.channels_, trans);
+          output_data, tile_idx, channel_idx, n_tiles_, n_channels_, trans);
     }
   }
 
  private:
   const Index n_elems_;
+  const Index n_tiles_;
   const Index n_tile_rows_;
   const Index n_tile_cols_;
-  const SYCLConv2DParams p_;
+  const Index n_in_cols_;
+  const Index n_in_rows_;
+  const Index n_channels_;
+  const Index n_pad_cols_;
+  const Index n_pad_rows_;
   const read_accessor input_accessor_;
   write_accessor output_accessor_;
 };
@@ -540,8 +565,10 @@ struct ExtractKernelTiles {
       const T* kernel_data = ConvertToActualTypeSycl(T, kernel_accessor_);
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
 
-      const Index feature_idx = index % n_features_;
-      const Index channel_idx = index / n_features_;
+      const helpers::TensorIndex2D channel_feature_idx =
+          helpers::unflatten2d<Index, false>(index, n_features_, n_features_);
+      const Index feature_idx = channel_feature_idx.s1;
+      const Index channel_idx = channel_feature_idx.s0;
 
       FilterTile<T, M, N, R, S, CType> filter(
           kernel_data, channel_idx, feature_idx, n_channels_, n_features_);
@@ -594,8 +621,10 @@ struct ExtractKernelTiles<T, M, N, R, S, ConvType::InputBackprop> {
       const T* kernel_data = ConvertToActualTypeSycl(T, kernel_accessor_);
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
 
-      const Index feature_idx = index / n_channels_;
-      const Index channel_idx = index % n_channels_;
+      const helpers::TensorIndex2D feature_channel_idx =
+          helpers::unflatten2d<Index, false>(index, n_channels_, n_channels_);
+      const Index feature_idx = feature_channel_idx.s0;
+      const Index channel_idx = feature_channel_idx.s1;
 
       FilterTile<T, M, N, R, S, CType> filter(
           kernel_data, channel_idx, feature_idx, n_channels_, n_features_);
@@ -645,7 +674,11 @@ struct ExtractKernelTiles<T, M, N, R, S, ConvType::FilterBackprop> {
       : n_threads_{params.features_ * n_tile_cols * n_tile_rows *
                    params.batch_},
         n_tiles_{n_tiles},
-        p_{params},
+        n_tile_rows_{n_tile_rows},
+        n_tile_cols_{n_tile_cols},
+        n_window_rows_{params.window_rows_},
+        n_window_cols_{params.window_cols_},
+        n_features_{params.features_},
         kernel_accessor_{kernel},
         output_accessor_{output} {}
 
@@ -655,25 +688,47 @@ struct ExtractKernelTiles<T, M, N, R, S, ConvType::FilterBackprop> {
       const T* kernel_data = ConvertToActualTypeSycl(T, kernel_accessor_);
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
 
-      const Index feature = index % p_.features_;
-      const Index tile_idx = index / p_.features_;
+      const helpers::TensorIndex2D tile_feature_idx =
+          helpers::unflatten2d<Index, false>(index, n_features_, n_features_);
+      const Index tile_idx = tile_feature_idx.s0;
+      const Index feature = tile_feature_idx.s1;
 
-      SYCLOutputWindow w =
-          p_.winograd_kernel_from_tile<M, N, R, S>(tile_idx, feature);
+      const helpers::TensorIndex3D tile_tensor_idx =
+          helpers::unflatten3d<Index, false>(
+              tile_idx, n_tile_rows_, n_tile_rows_, n_tile_cols_, n_tile_cols_);
+      const Index col_idx = tile_tensor_idx.s2;
+      const Index row_idx = tile_tensor_idx.s1;
+      const Index batch = tile_tensor_idx.s0;
 
-      FilterTile<T, M, N, R, S, CType> filter(kernel_data, w, p_.window_cols_,
-                                              p_.features_);
+      const Index col = col_idx * S;
+      const Index cend = cl::sycl::min(col + N, n_window_cols_);
+
+      const Index row = row_idx * R;
+      const Index rend = cl::sycl::min(row + M, n_window_rows_);
+
+      const Index offset =
+          ((batch * n_window_rows_ + row) * n_window_cols_ + col) *
+              n_features_ +
+          feature;
+      SYCLOutputWindow w{rend - row, cend - col, offset};
+
+      FilterTile<T, M, N, R, S, CType> filter(kernel_data, w, n_window_cols_,
+                                              n_features_);
       TransformedFilterTile<T, M, N, R, S> transformed{filter};
 
       OutputData<T, M, N, R, S>::write_transformed_filter(
-          output_data, feature, tile_idx, p_.features_, n_tiles_, transformed);
+          output_data, feature, tile_idx, n_features_, n_tiles_, transformed);
     }
   }
 
  private:
   const Index n_threads_;
   const Index n_tiles_;
-  const SYCLConv2DParams p_;
+  const Index n_tile_rows_;
+  const Index n_tile_cols_;
+  const Index n_window_rows_;
+  const Index n_window_cols_;
+  const Index n_features_;
   const read_accessor kernel_accessor_;
   write_accessor output_accessor_;
 };
@@ -696,9 +751,11 @@ struct ExtractOutputTiles {
       : n_threads_{params.features_ * n_tile_cols * n_tile_rows *
                    params.batch_},
         n_tiles_{n_tiles},
-        n_tile_rows_{RoundRatioUpAboveZero(params.out_rows_, M)},
-        n_tile_cols_{RoundRatioUpAboveZero(params.out_cols_, N)},
-        p_{params},
+        n_tile_rows_{n_tile_rows},
+        n_tile_cols_{n_tile_cols},
+        n_out_rows_{params.out_rows_},
+        n_out_cols_{params.out_cols_},
+        n_features_{params.features_},
         input_accessor_{input},
         output_accessor_{output} {}
 
@@ -708,32 +765,35 @@ struct ExtractOutputTiles {
       const T* input_data = ConvertToActualTypeSycl(T, input_accessor_);
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
 
-      const Index feature = index % p_.features_;
-      const Index tile_idx = index / p_.features_;
+      const helpers::TensorIndex2D tile_feature_idx =
+          helpers::unflatten2d<Index, false>(index, n_features_, n_features_);
+      const Index tile_idx = tile_feature_idx.s0;
+      const Index feature = tile_feature_idx.s1;
+
+      const helpers::TensorIndex3D tile_tensor_idx =
+          helpers::unflatten3d<Index, false>(
+              tile_idx, n_tile_rows_, n_tile_rows_, n_tile_cols_, n_tile_cols_);
+      const Index col_idx = tile_tensor_idx.s2;
+      const Index row_idx = tile_tensor_idx.s1;
+      const Index batch = tile_tensor_idx.s0;
 
       IntermediateTile<T, M, N, R, S> tmp{input_data, tile_idx, n_tiles_,
-                                          feature, p_.features_};
-
-      const Index brc_idx = tile_idx;
-      const Index br_idx = brc_idx / n_tile_cols_;
-      const Index col_idx = brc_idx % n_tile_cols_;
-      const Index batch = br_idx / n_tile_rows_;
-      const Index row_idx = br_idx % n_tile_rows_;
+                                          feature, n_features_};
 
       const Index col = col_idx * N;
-      const Index cend = cl::sycl::min(col + N, p_.out_cols_);
+      const Index cend = cl::sycl::min(col + N, n_out_cols_);
 
       const Index row = row_idx * M;
-      const Index rend = cl::sycl::min(row + M, p_.out_rows_);
+      const Index rend = cl::sycl::min(row + M, n_out_rows_);
 
       const Index offset =
-          ((batch * p_.out_rows_ + row) * p_.out_cols_ + col) * p_.features_ +
+          ((batch * n_out_rows_ + row) * n_out_cols_ + col) * n_features_ +
           feature;
 
       SYCLOutputWindow out_w{rend - row, cend - col, offset};
 
-      OutputData<T, M, N, R, S>::write_output(output_data, out_w, p_.out_cols_,
-                                              p_.features_,
+      OutputData<T, M, N, R, S>::write_output(output_data, out_w, n_out_cols_,
+                                              n_features_,
                                               OutputTile<T, M, N, R, S>{tmp});
     }
   }
@@ -743,7 +803,9 @@ struct ExtractOutputTiles {
   const Index n_tiles_;
   const Index n_tile_rows_;
   const Index n_tile_cols_;
-  const SYCLConv2DParams p_;
+  const Index n_out_rows_;
+  const Index n_out_cols_;
+  const Index n_features_;
   const read_accessor input_accessor_;
   write_accessor output_accessor_;
 };
@@ -763,7 +825,8 @@ struct ExtractOutputTiles<T, M, N, R, S, ConvType::FilterBackprop> {
       Index const /*n_tiles*/, SYCLConv2DParams const& params,
       read_accessor const input, write_accessor output)
       : n_threads_{params.features_ * params.channels_},
-        p_{params},
+        n_features_{params.features_},
+        n_channels_{params.channels_},
         input_accessor_{input},
         output_accessor_{output} {}
 
@@ -773,20 +836,23 @@ struct ExtractOutputTiles<T, M, N, R, S, ConvType::FilterBackprop> {
       const T* input_data = ConvertToActualTypeSycl(T, input_accessor_);
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
 
-      const Index feature = index % p_.features_;
-      const Index channel = index / p_.features_;
+      const helpers::TensorIndex2D channel_feature_idx =
+          helpers::unflatten2d<Index, false>(index, n_features_, n_features_);
+      const Index channel = channel_feature_idx.s0;
+      const Index feature = channel_feature_idx.s1;
 
-      IntermediateTile<T, M, N, R, S> tmp{input_data, channel, p_.channels_,
-                                          feature, p_.features_};
+      IntermediateTile<T, M, N, R, S> tmp{input_data, channel, n_channels_,
+                                          feature, n_features_};
       OutputData<T, M, N, R, S>::write_filter_output(
-          output_data, channel, feature, p_.channels_, p_.features_,
+          output_data, channel, feature, n_channels_, n_features_,
           OutputTile<T, M, N, R, S>{tmp});
     }
   }
 
  private:
   const Index n_threads_;
-  const SYCLConv2DParams p_;
+  const Index n_features_;
+  const Index n_channels_;
   const read_accessor input_accessor_;
   write_accessor output_accessor_;
 };
