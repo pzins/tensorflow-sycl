@@ -8,6 +8,7 @@
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 
 #include "tensorflow/core/kernels/conv_ops_sycl_common.h"
+#include "tensorflow/core/kernels/conv_ops_sycl_param_macros.h"
 #include "tensorflow/core/platform/logging.h"
 
 namespace tensorflow {
@@ -33,13 +34,14 @@ struct ExtractInputTiles<T, ConvType::Forward> {
       cl::sycl::accessor<buffer_data, 1, read_mode, global_access>;
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE ExtractInputTiles(
-      Index const n_items, Index const in_offset, Index const tile_size,
+      Index const /*n_items*/, Index const in_offset, Index const tile_size,
       SYCLConv2DParams const& params, read_accessor const input,
       write_accessor output)
-      : n_items_{n_items},
+      : n_items_{params.batch_ * params.in_rows_ * params.in_cols_ *
+                 params.channels_},
         in_offset_{in_offset},
         tile_size_{tile_size},
-        p_{params},
+        SNN_CONSTRUCT_CONV_PARAMS(params),
         input_accessor_{input},
         output_accessor_{output} {}
 
@@ -50,23 +52,48 @@ struct ExtractInputTiles<T, ConvType::Forward> {
           ConvertToActualTypeSycl(T, input_accessor_) + in_offset_;
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
 
-      const Index channel = index % p_.channels_;
-      const Index input_idx = index / p_.channels_;
-      T in_val = input_data[index];
-      const SYCL2DWindow w = p_.output_window_from_input(input_idx);
+      const Index channel = index % SNN_PARAM(channels_);
+      const Index brc_idx = index / SNN_PARAM(channels_);
+      const Index col_idx = brc_idx % SNN_PARAM(in_cols_);
+      const Index br_idx = brc_idx / SNN_PARAM(in_cols_);
+      const Index row_idx = br_idx % SNN_PARAM(in_rows_);
+      const Index batch = br_idx / SNN_PARAM(in_rows_);
 
-      for (Index r = w.rstart, in_r = p_.window_rows_ - 1 - w.firstr;
-           r < w.rend; ++r, in_r -= p_.stride_rows_) {
+      // c is the index in the padded output tensor (ie with lots of extra
+      // zeros), but without the first padding. first_padded_c adds this extra
+      // padding.
+      const Index c = col_idx + SNN_PARAM(pad_cols_);
+      const Index first_padded_c =
+          c - (SNN_PARAM(window_cols_) - 1) * SNN_PARAM(dilation_cols_);
+      // The first and last output indices affected by this input.
+      const Index last_used_c = c / SNN_PARAM(stride_cols_);
+      Index cstart = RoundRatioUp(first_padded_c, SNN_PARAM(stride_cols_));
+      const Index firstc = cstart * SNN_PARAM(stride_cols_) - first_padded_c;
+      const Index cend = cl::sycl::min(last_used_c + 1, SNN_PARAM(out_cols_));
+
+      const Index r = row_idx + SNN_PARAM(pad_rows_);
+      const Index last_used_r = r / SNN_PARAM(stride_rows_);
+      const Index first_padded_r =
+          r - (SNN_PARAM(window_rows_) - 1) * SNN_PARAM(dilation_rows_);
+      Index rstart = RoundRatioUp(first_padded_r, SNN_PARAM(stride_rows_));
+      const Index firstr = rstart * SNN_PARAM(stride_rows_) - first_padded_r;
+      const Index rend = cl::sycl::min(last_used_r + 1, SNN_PARAM(out_rows_));
+
+      T in_val = input_data[index];
+      for (Index r = rstart, in_r = SNN_PARAM(window_rows_) - 1 - firstr;
+           r < rend; ++r, in_r -= SNN_PARAM(stride_rows_)) {
         if (r >= 0) {
-          for (Index c = w.cstart, in_c = p_.window_cols_ - 1 - w.firstc;
-               c < w.cend; ++c, in_c -= p_.stride_cols_) {
+          for (Index c = cstart, in_c = SNN_PARAM(window_cols_) - 1 - firstc;
+               c < cend; ++c, in_c -= SNN_PARAM(stride_cols_)) {
             if (c >= 0) {
               T* tile_start =
                   output_data +
-                  ((w.batch * p_.out_rows_ + r) * p_.out_cols_ + c) *
+                  ((batch * SNN_PARAM(out_rows_) + r) * SNN_PARAM(out_cols_) +
+                   c) *
                       tile_size_;
-              Index tile_idx =
-                  (in_r * p_.window_cols_ + in_c) * p_.channels_ + channel;
+              Index tile_idx = (in_r * SNN_PARAM(window_cols_) + in_c) *
+                                   SNN_PARAM(channels_) +
+                               channel;
               tile_start[tile_idx] = in_val;
             }
           }
@@ -79,7 +106,7 @@ struct ExtractInputTiles<T, ConvType::Forward> {
   const Index n_items_;
   const Index in_offset_;
   const Index tile_size_;
-  const SYCLConv2DParams p_;
+  SNN_INJECT_CONV_PARAMS;
   const read_accessor input_accessor_;
   write_accessor output_accessor_;
 };
@@ -96,13 +123,14 @@ struct ExtractInputTiles<T, ConvType::InputBackprop> {
       cl::sycl::accessor<buffer_data, 1, read_mode, global_access>;
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE ExtractInputTiles(
-      Index const n_items, Index const in_offset, Index const tile_size,
+      Index const /*n_items*/, Index const in_offset, Index const tile_size,
       SYCLConv2DParams const& params, read_accessor const input,
       write_accessor output)
-      : n_items_{n_items},
+      : n_items_{params.batch_ * params.out_rows_ * params.out_cols_ *
+                 params.features_},
         in_offset_{in_offset},
         tile_size_{tile_size},
-        p_{params},
+        SNN_CONSTRUCT_CONV_PARAMS(params),
         input_accessor_{input},
         output_accessor_{output} {}
 
@@ -113,22 +141,41 @@ struct ExtractInputTiles<T, ConvType::InputBackprop> {
           ConvertToActualTypeSycl(T, input_accessor_) + in_offset_;
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
 
-      const Index feature = index % p_.features_;
-      const Index output_idx = index / p_.features_;
-      const SYCL2DWindow w = p_.input_window_from_output(output_idx);
-      T in_val = input_data[index];
+      const Index feature = index % SNN_PARAM(features_);
+      const Index brc_idx = index / SNN_PARAM(features_);
+      const Index col_idx = brc_idx % SNN_PARAM(out_cols_);
+      const Index br_idx = brc_idx / SNN_PARAM(out_cols_);
+      const Index row_idx = br_idx % SNN_PARAM(out_rows_);
+      const Index batch = br_idx / SNN_PARAM(out_rows_);
 
-      for (Index r = cl::sycl::max(w.rstart, 0),
-                 in_r = p_.window_rows_ - 1 - w.firstr;
-           r < w.rend; ++r, --in_r) {
-        for (Index c = cl::sycl::max(w.cstart, 0),
-                   in_c = p_.window_cols_ - 1 - w.firstc;
-             c < w.cend; ++c, --in_c) {
+      const Index cstart =
+          col_idx * SNN_PARAM(stride_cols_) - SNN_PARAM(pad_cols_);
+      const Index cend = cl::sycl::min(
+          cstart + (SNN_PARAM(window_cols_) * SNN_PARAM(dilation_cols_)),
+          SNN_PARAM(in_cols_));
+      const Index firstc = cstart < 0 ? -cstart : 0;
+
+      const Index rstart =
+          row_idx * SNN_PARAM(stride_rows_) - SNN_PARAM(pad_rows_);
+      const Index rend = cl::sycl::min(
+          rstart + (SNN_PARAM(window_rows_) * SNN_PARAM(dilation_rows_)),
+          SNN_PARAM(in_rows_));
+      const Index firstr = rstart < 0 ? -rstart : 0;
+
+      T in_val = input_data[index];
+      for (Index r = cl::sycl::max(rstart, 0),
+                 in_r = SNN_PARAM(window_rows_) - 1 - firstr;
+           r < rend; ++r, --in_r) {
+        for (Index c = cl::sycl::max(cstart, 0),
+                   in_c = SNN_PARAM(window_cols_) - 1 - firstc;
+             c < cend; ++c, --in_c) {
           T* tile_start =
               output_data +
-              ((w.batch * p_.in_rows_ + r) * p_.in_cols_ + c) * tile_size_;
+              ((batch * SNN_PARAM(in_rows_) + r) * SNN_PARAM(in_cols_) + c) *
+                  tile_size_;
           Index tile_idx =
-              (in_r * p_.window_cols_ + in_c) * p_.features_ + feature;
+              (in_r * SNN_PARAM(window_cols_) + in_c) * SNN_PARAM(features_) +
+              feature;
           tile_start[tile_idx] = in_val;
         }
       }
@@ -139,7 +186,7 @@ struct ExtractInputTiles<T, ConvType::InputBackprop> {
   const Index n_items_;
   const Index in_offset_;
   const Index tile_size_;
-  const SYCLConv2DParams p_;
+  SNN_INJECT_CONV_PARAMS;
   const read_accessor input_accessor_;
   write_accessor output_accessor_;
 };
@@ -156,13 +203,14 @@ struct ExtractInputTiles<T, ConvType::FilterBackprop> {
       cl::sycl::accessor<buffer_data, 1, read_mode, global_access>;
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE ExtractInputTiles(
-      Index const n_items, Index const in_offset, Index const tile_size,
+      Index const /*n_items*/, Index const in_offset, Index const tile_size,
       SYCLConv2DParams const& params, read_accessor const input,
       write_accessor output)
-      : n_items_{n_items},
+      : n_items_{params.batch_ * params.in_rows_ * params.in_cols_ *
+                 params.channels_},
         in_offset_{in_offset},
         tile_size_{tile_size},
-        p_{params},
+        SNN_CONSTRUCT_CONV_PARAMS(params),
         input_accessor_{input},
         output_accessor_{output} {}
 
@@ -173,34 +221,61 @@ struct ExtractInputTiles<T, ConvType::FilterBackprop> {
           ConvertToActualTypeSycl(T, input_accessor_) + in_offset_;
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
 
-      const Index channel = index % p_.channels_;
-      const Index input_idx = index / p_.channels_;
-      T in_val = input_data[index];
-      const SYCL2DWindow w = p_.output_window_from_input(input_idx);
+      const Index channel = index % SNN_PARAM(channels_);
+      const Index brc_idx = index / SNN_PARAM(channels_);
+      const Index col_idx = brc_idx % SNN_PARAM(in_cols_);
+      const Index br_idx = brc_idx / SNN_PARAM(in_cols_);
+      const Index row_idx = br_idx % SNN_PARAM(in_rows_);
+      const Index batch = br_idx / SNN_PARAM(in_rows_);
 
-      Index init_r = w.rstart;
-      Index init_r_idx = p_.window_rows_ - 1;
+      // c is the index in the padded output tensor (ie with lots of extra
+      // zeros), but without the first padding. first_padded_c adds this extra
+      // padding.
+      const Index c = col_idx + SNN_PARAM(pad_cols_);
+      const Index first_padded_c =
+          c - (SNN_PARAM(window_cols_) - 1) * SNN_PARAM(dilation_cols_);
+      // The first and last output indices affected by this input.
+      const Index last_used_c = c / SNN_PARAM(stride_cols_);
+      const Index cstart =
+          RoundRatioUp(first_padded_c, SNN_PARAM(stride_cols_));
+      const Index cend = cl::sycl::min(last_used_c + 1, SNN_PARAM(out_cols_));
+
+      const Index r = row_idx + SNN_PARAM(pad_rows_);
+      const Index last_used_r = r / SNN_PARAM(stride_rows_);
+      const Index first_padded_r =
+          r - (SNN_PARAM(window_rows_) - 1) * SNN_PARAM(dilation_rows_);
+      const Index rstart =
+          RoundRatioUp(first_padded_r, SNN_PARAM(stride_rows_));
+      const Index rend = cl::sycl::min(last_used_r + 1, SNN_PARAM(out_rows_));
+
+      Index init_r = rstart;
+      Index init_r_idx = SNN_PARAM(window_rows_) - 1;
       if (init_r < 0) {
-        Index n_inc = RoundRatioUpAboveZero(-init_r, p_.dilation_rows_);
-        init_r_idx -= n_inc * p_.stride_rows_;
-        init_r += n_inc * p_.dilation_rows_;
+        Index n_inc = RoundRatioUpAboveZero(-init_r, SNN_PARAM(dilation_rows_));
+        init_r_idx -= n_inc * SNN_PARAM(stride_rows_);
+        init_r += n_inc * SNN_PARAM(dilation_rows_);
       }
-      Index init_c = w.cstart;
-      Index init_c_idx = p_.window_cols_ - 1;
+      Index init_c = cstart;
+      Index init_c_idx = SNN_PARAM(window_cols_) - 1;
       if (init_c < 0) {
-        Index n_inc = RoundRatioUpAboveZero(-init_c, p_.dilation_cols_);
-        init_c_idx -= n_inc * p_.stride_cols_;
-        init_c += n_inc * p_.dilation_cols_;
+        Index n_inc = RoundRatioUpAboveZero(-init_c, SNN_PARAM(dilation_cols_));
+        init_c_idx -= n_inc * SNN_PARAM(stride_cols_);
+        init_c += n_inc * SNN_PARAM(dilation_cols_);
       }
-      for (Index r = init_r, in_r = init_r_idx; r < w.rend;
-           r += p_.dilation_rows_, in_r -= p_.stride_rows_) {
-        for (Index c = init_c, in_c = init_c_idx; c < w.cend;
-             c += p_.dilation_cols_, in_c -= p_.stride_cols_) {
+
+      T in_val = input_data[index];
+      for (Index r = init_r, in_r = init_r_idx; r < rend;
+           r += SNN_PARAM(dilation_rows_), in_r -= SNN_PARAM(stride_rows_)) {
+        for (Index c = init_c, in_c = init_c_idx; c < cend;
+             c += SNN_PARAM(dilation_cols_), in_c -= SNN_PARAM(stride_cols_)) {
           T* tile_start =
               output_data +
-              ((r * p_.out_cols_ + c) * p_.channels_ + channel) * tile_size_;
-          Index tile_idx =
-              ((w.batch * p_.window_rows_ + in_r) * p_.window_cols_ + in_c);
+              ((r * SNN_PARAM(out_cols_) + c) * SNN_PARAM(channels_) +
+               channel) *
+                  tile_size_;
+          Index tile_idx = ((batch * SNN_PARAM(window_rows_) + in_r) *
+                                SNN_PARAM(window_cols_) +
+                            in_c);
           tile_start[tile_idx] = in_val;
         }
       }
@@ -211,7 +286,7 @@ struct ExtractInputTiles<T, ConvType::FilterBackprop> {
   const Index n_items_;
   const Index in_offset_;
   const Index tile_size_;
-  const SYCLConv2DParams p_;
+  SNN_INJECT_CONV_PARAMS;
   const read_accessor input_accessor_;
   write_accessor output_accessor_;
 };
@@ -230,12 +305,16 @@ struct ExtractKernelTiles<T, ConvType::InputBackprop> {
       cl::sycl::accessor<buffer_data, 1, read_mode, global_access>;
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE ExtractKernelTiles(
-      Index const n_items, Index const in_offset,
+      Index const /*n_items*/, Index const in_offset,
       SYCLConv2DParams const& params, read_accessor const input,
       write_accessor output)
-      : n_items_{n_items},
+      : n_items_{params.window_rows_ * params.window_cols_ * params.channels_ *
+                 params.features_},
         in_offset_{in_offset},
-        p_{params},
+        n_window_rows_{params.window_rows_},
+        n_window_cols_{params.window_cols_},
+        n_channels_{params.channels_},
+        n_features_{params.features_},
         input_accessor_{input},
         output_accessor_{output} {}
 
@@ -247,19 +326,18 @@ struct ExtractKernelTiles<T, ConvType::InputBackprop> {
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
       T in_val = input_data[index];
 
-      const Index feature = index % p_.features_;
-      index /= p_.features_;
-      const Index channel = index % p_.channels_;
-      index /= p_.channels_;
-      const Index col = index % p_.window_cols_;
-      index /= p_.window_cols_;
-      const Index row = index;
+      const Index feature = index % n_features_;
+      const Index hwc_idx = index / n_features_;
+      const Index channel = hwc_idx % n_channels_;
+      const Index hw_idx = hwc_idx / n_channels_;
+      const Index col = hw_idx % n_window_cols_;
+      const Index row = hw_idx / n_window_cols_;
 
-      const Index out_row = p_.window_rows_ - 1 - row;
-      const Index out_col = p_.window_cols_ - 1 - col;
+      const Index out_row = n_window_rows_ - 1 - row;
+      const Index out_col = n_window_cols_ - 1 - col;
       const Index out_idx =
-          ((out_row * p_.window_cols_ + out_col) * p_.features_ + feature) *
-              p_.channels_ +
+          ((out_row * n_window_cols_ + out_col) * n_features_ + feature) *
+              n_channels_ +
           channel;
       output_data[out_idx] = in_val;
     }
@@ -268,7 +346,10 @@ struct ExtractKernelTiles<T, ConvType::InputBackprop> {
  private:
   const Index n_items_;
   const Index in_offset_;
-  const SYCLConv2DParams p_;
+  const Index n_window_rows_;
+  const Index n_window_cols_;
+  const Index n_channels_;
+  const Index n_features_;
   const read_accessor input_accessor_;
   write_accessor output_accessor_;
 };
