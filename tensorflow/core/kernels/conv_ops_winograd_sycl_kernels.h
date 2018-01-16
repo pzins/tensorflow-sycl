@@ -412,12 +412,13 @@ struct ExtractInputTiles {
       const Index brc_idx = tile_idx;
       const Index br_idx = brc_idx / n_tile_cols_;
       const Index col_idx = brc_idx % n_tile_cols_;
+      const Index batch = br_idx / n_tile_rows_;
+      const Index row_idx = br_idx % n_tile_rows_;
+
       const Index cstart = col_idx * N - p_.pad_cols_;
       const Index cend = cl::sycl::min(cstart + N + S - 1, p_.in_cols_);
       const Index firstc = cstart < 0 ? -cstart : 0;
 
-      const Index batch = br_idx / n_tile_rows_;
-      const Index row_idx = br_idx % n_tile_rows_;
       const Index rstart = row_idx * M - p_.pad_rows_;
       const Index rend = cl::sycl::min(rstart + M + R - 1, p_.in_rows_);
       const Index firstr = rstart < 0 ? -rstart : 0;
@@ -476,17 +477,18 @@ struct ExtractInputTiles<T, M, N, R, S, ConvType::FilterBackprop> {
 
       const Index channel_idx = index % p_.channels_;
       const Index tile_idx = index / p_.channels_;
+      const Index col_idx = tile_idx % n_tile_cols_;
+      const Index br_idx = tile_idx / n_tile_cols_;
+      const Index row_idx = br_idx % n_tile_rows_;
+      const Index batch = br_idx / n_tile_rows_;
 
-      Index batch = tile_idx;
-      const Index cstart = (batch % n_tile_cols_) * S - p_.pad_cols_;
+      const Index cstart = col_idx * S - p_.pad_cols_;
       const Index cend = std::min(cstart + N + S - 1, p_.in_cols_);
       const Index firstc = cstart < 0 ? -cstart : 0;
-      batch /= n_tile_cols_;
 
-      const Index rstart = (batch % n_tile_rows_) * R - p_.pad_rows_;
+      const Index rstart = row_idx * R - p_.pad_rows_;
       const Index rend = std::min(rstart + M + R - 1, p_.in_rows_);
       const Index firstr = rstart < 0 ? -rstart : 0;
-      batch /= n_tile_rows_;
 
       const Index offset =
           ((batch * p_.in_rows_ + rstart) * p_.in_cols_ + cstart) *
@@ -715,11 +717,12 @@ struct ExtractOutputTiles {
       const Index brc_idx = tile_idx;
       const Index br_idx = brc_idx / n_tile_cols_;
       const Index col_idx = brc_idx % n_tile_cols_;
+      const Index batch = br_idx / n_tile_rows_;
+      const Index row_idx = br_idx % n_tile_rows_;
+
       const Index col = col_idx * N;
       const Index cend = cl::sycl::min(col + N, p_.out_cols_);
 
-      const Index batch = br_idx / n_tile_rows_;
-      const Index row_idx = br_idx % n_tile_rows_;
       const Index row = row_idx * M;
       const Index rend = cl::sycl::min(row + M, p_.out_rows_);
 
