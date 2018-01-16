@@ -34,7 +34,7 @@ struct ExtractInputTiles<T, ConvType::Forward> {
       cl::sycl::accessor<buffer_data, 1, read_mode, global_access>;
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE ExtractInputTiles(
-      Index const /*n_items*/, Index const in_offset, Index const tile_size,
+      Index const in_offset, Index const tile_size,
       SYCLConv2DParams const& params, read_accessor const input,
       write_accessor output)
       : n_items_{params.batch_ * params.in_rows_ * params.in_cols_ *
@@ -123,7 +123,7 @@ struct ExtractInputTiles<T, ConvType::InputBackprop> {
       cl::sycl::accessor<buffer_data, 1, read_mode, global_access>;
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE ExtractInputTiles(
-      Index const /*n_items*/, Index const in_offset, Index const tile_size,
+      Index const in_offset, Index const tile_size,
       SYCLConv2DParams const& params, read_accessor const input,
       write_accessor output)
       : n_items_{params.batch_ * params.out_rows_ * params.out_cols_ *
@@ -203,7 +203,7 @@ struct ExtractInputTiles<T, ConvType::FilterBackprop> {
       cl::sycl::accessor<buffer_data, 1, read_mode, global_access>;
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE ExtractInputTiles(
-      Index const /*n_items*/, Index const in_offset, Index const tile_size,
+      Index const in_offset, Index const tile_size,
       SYCLConv2DParams const& params, read_accessor const input,
       write_accessor output)
       : n_items_{params.batch_ * params.in_rows_ * params.in_cols_ *
@@ -305,9 +305,8 @@ struct ExtractKernelTiles<T, ConvType::InputBackprop> {
       cl::sycl::accessor<buffer_data, 1, read_mode, global_access>;
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE ExtractKernelTiles(
-      Index const /*n_items*/, Index const in_offset,
-      SYCLConv2DParams const& params, read_accessor const input,
-      write_accessor output)
+      Index const in_offset, SYCLConv2DParams const& params,
+      read_accessor const input, write_accessor output)
       : n_items_{params.window_rows_ * params.window_cols_ * params.channels_ *
                  params.features_},
         in_offset_{in_offset},
