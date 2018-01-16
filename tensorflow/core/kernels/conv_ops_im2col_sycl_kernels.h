@@ -8,6 +8,7 @@
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 
 #include "tensorflow/core/kernels/conv_ops_sycl_common.h"
+#include "tensorflow/core/kernels/conv_ops_sycl_kernel_helpers.h"
 #include "tensorflow/core/kernels/conv_ops_sycl_param_macros.h"
 #include "tensorflow/core/platform/logging.h"
 
@@ -52,12 +53,15 @@ struct ExtractInputTiles<T, ConvType::Forward> {
           ConvertToActualTypeSycl(T, input_accessor_) + in_offset_;
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
 
-      const Index channel = index % SNN_PARAM(channels_);
-      const Index brc_idx = index / SNN_PARAM(channels_);
-      const Index col_idx = brc_idx % SNN_PARAM(in_cols_);
-      const Index br_idx = brc_idx / SNN_PARAM(in_cols_);
-      const Index row_idx = br_idx % SNN_PARAM(in_rows_);
-      const Index batch = br_idx / SNN_PARAM(in_rows_);
+      const helpers::TensorIndex4D tensor_idx =
+          helpers::unflatten4d<Index, false>(
+              index, SNN_PARAM(in_rows_), SNN_PARAM(in_rows_),
+              SNN_PARAM(in_cols_), SNN_PARAM(in_cols_), SNN_PARAM(channels_),
+              SNN_PARAM(channels_));
+      const Index channel = tensor_idx.s3;
+      const Index col_idx = tensor_idx.s2;
+      const Index row_idx = tensor_idx.s1;
+      const Index batch = tensor_idx.s0;
 
       // c is the index in the padded output tensor (ie with lots of extra
       // zeros), but without the first padding. first_padded_c adds this extra
@@ -141,12 +145,15 @@ struct ExtractInputTiles<T, ConvType::InputBackprop> {
           ConvertToActualTypeSycl(T, input_accessor_) + in_offset_;
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
 
-      const Index feature = index % SNN_PARAM(features_);
-      const Index brc_idx = index / SNN_PARAM(features_);
-      const Index col_idx = brc_idx % SNN_PARAM(out_cols_);
-      const Index br_idx = brc_idx / SNN_PARAM(out_cols_);
-      const Index row_idx = br_idx % SNN_PARAM(out_rows_);
-      const Index batch = br_idx / SNN_PARAM(out_rows_);
+      const helpers::TensorIndex4D tensor_idx =
+          helpers::unflatten4d<Index, false>(
+              index, SNN_PARAM(out_rows_), SNN_PARAM(out_rows_),
+              SNN_PARAM(out_cols_), SNN_PARAM(out_cols_), SNN_PARAM(features_),
+              SNN_PARAM(features_));
+      const Index feature = tensor_idx.s3;
+      const Index col_idx = tensor_idx.s2;
+      const Index row_idx = tensor_idx.s1;
+      const Index batch = tensor_idx.s0;
 
       const Index cstart =
           col_idx * SNN_PARAM(stride_cols_) - SNN_PARAM(pad_cols_);
@@ -221,12 +228,15 @@ struct ExtractInputTiles<T, ConvType::FilterBackprop> {
           ConvertToActualTypeSycl(T, input_accessor_) + in_offset_;
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
 
-      const Index channel = index % SNN_PARAM(channels_);
-      const Index brc_idx = index / SNN_PARAM(channels_);
-      const Index col_idx = brc_idx % SNN_PARAM(in_cols_);
-      const Index br_idx = brc_idx / SNN_PARAM(in_cols_);
-      const Index row_idx = br_idx % SNN_PARAM(in_rows_);
-      const Index batch = br_idx / SNN_PARAM(in_rows_);
+      const helpers::TensorIndex4D tensor_idx =
+          helpers::unflatten4d<Index, false>(
+              index, SNN_PARAM(in_rows_), SNN_PARAM(in_rows_),
+              SNN_PARAM(in_cols_), SNN_PARAM(in_cols_), SNN_PARAM(channels_),
+              SNN_PARAM(channels_));
+      const Index channel = tensor_idx.s3;
+      const Index col_idx = tensor_idx.s2;
+      const Index row_idx = tensor_idx.s1;
+      const Index batch = tensor_idx.s0;
 
       // c is the index in the padded output tensor (ie with lots of extra
       // zeros), but without the first padding. first_padded_c adds this extra
@@ -325,12 +335,14 @@ struct ExtractKernelTiles<T, ConvType::InputBackprop> {
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
       T in_val = input_data[index];
 
-      const Index feature = index % n_features_;
-      const Index hwc_idx = index / n_features_;
-      const Index channel = hwc_idx % n_channels_;
-      const Index hw_idx = hwc_idx / n_channels_;
-      const Index col = hw_idx % n_window_cols_;
-      const Index row = hw_idx / n_window_cols_;
+      const helpers::TensorIndex4D tensor_idx =
+          helpers::unflatten4d<Index, false>(
+              index, n_window_cols_, n_window_cols_, n_channels_, n_channels_,
+              n_features_, n_features_);
+      const Index feature = tensor_idx.s3;
+      const Index channel = tensor_idx.s2;
+      const Index col = tensor_idx.s1;
+      const Index row = tensor_idx.s0;
 
       const Index out_row = n_window_rows_ - 1 - row;
       const Index out_col = n_window_cols_ - 1 - col;
