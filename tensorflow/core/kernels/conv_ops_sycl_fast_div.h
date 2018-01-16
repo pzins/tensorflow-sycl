@@ -138,6 +138,14 @@ index_type inline TF_ATTRIBUTE_ALWAYS_INLINE operator/(
                 "Fast division is only supported on signed integer types.");
   return divide(value, magic.multiple, magic.shift);
 }
+template <typename Index, bool use_fast_div>
+struct index_div {
+  using type = Index;
+};
+template <typename Index>
+struct index_div<Index, true> {
+  using type = magic_numbers<Index>;
+};
 }  // namespace fast_div
 }  // namespace tensorflow
 #endif  // TENSORFLOW_KERNELS_CONV_OPS_SYCL_FAST_DIV_H_
