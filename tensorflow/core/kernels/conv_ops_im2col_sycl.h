@@ -14,8 +14,7 @@
 namespace tensorflow {
 namespace im2col {
 struct TileInfo {
-  int rows;
-  int cols;
+  int number;
   int size;
 };
 template <ConvType CType>
@@ -23,21 +22,28 @@ inline TileInfo get_tile_info(SYCLConv2DParams const& params);
 template <>
 inline TileInfo get_tile_info<ConvType::Forward>(
     SYCLConv2DParams const& params) {
-  const int n_tile_rows = params.out_rows_;
-  const int n_tile_cols = params.out_cols_;
+  const int n_tiles = params.out_rows_ * params.out_cols_;
   const int tile_size =
       params.window_rows_ * params.window_cols_ * params.channels_;
-  const TileInfo result{n_tile_rows, n_tile_cols, tile_size};
+  const TileInfo result{n_tiles, tile_size};
   return result;
 }
 template <>
 inline TileInfo get_tile_info<ConvType::InputBackprop>(
     SYCLConv2DParams const& params) {
-  const int n_tile_rows = params.in_rows_;
-  const int n_tile_cols = params.in_cols_;
+  const int n_tiles = params.in_rows_ * params.in_cols_;
   const int tile_size =
       params.window_rows_ * params.window_cols_ * params.features_;
-  const TileInfo result{n_tile_rows, n_tile_cols, tile_size};
+  const TileInfo result{n_tiles, tile_size};
+  return result;
+}
+template <>
+inline TileInfo get_tile_info<ConvType::FilterBackprop>(
+    SYCLConv2DParams const& params) {
+  const int n_tiles =
+      params.window_rows_ * params.window_cols_ * params.channels_;
+  const int tile_size = params.out_rows_ * params.out_cols_;
+  const TileInfo result{n_tiles, tile_size};
   return result;
 }
 struct AllocInfo {
@@ -79,97 +85,34 @@ inline AllocInfo get_alloc_info(cl::sycl::device const& device,
                          last_batch_size};
   return result;
 }
-}
+/**
+ * For the forward and filter backprop convolutions, the filter does not need to
+ * be transformed, so we just reuse the original filter. As we don't allocate a
+ * new tensor we don't deallocate after computing the convolution.
+ */
 template <typename T, ConvType CType>
-struct LaunchIm2Col;
-template <typename T>
-struct LaunchIm2Col<T, ConvType::Forward> {
-  using Index = int;
-  static constexpr auto CType = ConvType::Forward;
-  using InputTransform = im2col::ExtractInputTiles<T, CType>;
-
-  static bool launch(Eigen::SyclDevice const& device, T* const output,
-                     T const* const input, T const* const filter,
-                     const SYCLConv2DParams& params) {
-    cl::sycl::queue& sycl_queue = device.sycl_queue();
-    cl::sycl::device const& sycl_device = sycl_queue.get_device();
-
-    const im2col::TileInfo tile_info = im2col::get_tile_info<CType>(params);
-
-    const size_t alloc_size_per_image =
-        tile_info.rows * tile_info.cols * tile_info.size * sizeof(T);
-    const im2col::AllocInfo alloc_info = im2col::get_alloc_info<CType>(
-        sycl_device, params, alloc_size_per_image);
-    size_t images_per_alloc = alloc_info.images_per_alloc;
-
-    // When the number of input transforms required is greater than one, it is
-    // because each transform buffer is right on the limit of what can be
-    // allocated on the device. This means that we need to reuse the same
-    // buffer for each iteration of the algorithm, as enqueuing more than one
-    // of these huge buffers can cause CL_MEM_OBJECT_ALLOCATION_FAILURE errors.
-    // Reusing the same buffer will add a little overhead, as the iterations
-    // cannot be run in parallel however it is required to avoid the allocation
-    // failures.
-    // TODO(jwlawson): Remove when sycl queue can handle this for us.
-    const size_t transform_size = alloc_size_per_image * images_per_alloc;
-    T* const transform = static_cast<T*>(device.allocate(transform_size));
-
-    for (int i = 0; i < alloc_info.n_input_transforms; ++i) {
-      const Index in_offset = i * images_per_alloc * params.in_rows_ *
-                              params.in_cols_ * params.channels_;
-      const Index out_offset = i * images_per_alloc * params.out_rows_ *
-                               params.out_cols_ * params.features_;
-      assert(i == 0 || in_offset > 0);
-      assert(i == 0 || out_offset > 0);
-      if (i == alloc_info.n_input_transforms - 1) {
-        images_per_alloc = alloc_info.last_batch_size;
-      }
-      SYCLConv2DParams kernel_params{params};
-      kernel_params.batch_ = images_per_alloc;
-      const Index n_tiles = images_per_alloc * tile_info.rows * tile_info.cols;
-      const size_t actual_transform_size =
-          alloc_size_per_image * images_per_alloc;
-
-      device.memset(transform, 0, actual_transform_size);
-      const Index in_transform_items = images_per_alloc * params.in_rows_ *
-                                       params.in_cols_ * params.channels_;
-      sycl_conv::launch_transform<InputTransform>(
-          device, input, transform, in_transform_items, kernel_params,
-          in_offset, tile_info.size);
-      sycl_conv::launch_matmul<false, false>(
-          device, transform, filter, output + out_offset, static_cast<T>(0),
-          n_tiles, tile_info.size, params.features_);
-    }
-    // At the moment we have to explicitly wait here to ensure that the device
-    // queue is cleared before enqueuing the kernels which use huge buffers so
-    // that we do not hit any memory allocation failures.
-    // TODO(jwlawson): Remove wait when SYCL queue handles allocation waiting.
-    device.synchronize();
-    device.deallocate(transform);
-    return true;
+struct FilterTransformAllocator {
+  static T const* get_transform(Eigen::SyclDevice const& /*device*/,
+                                T const* const filter,
+                                SYCLConv2DParams const& /*params*/) {
+    return filter;
   }
+  static void deallocate(Eigen::SyclDevice const& /*device*/,
+                         T const* const /*filter_transform*/) {}
 };
+/**
+ * For the input backprop pass the filter has to be transformed, so we need to
+ * allocate a tensor for the transform and compute the transform. The
+ * transformed filter needs to be deallocated after computing the convolution.
+ */
 template <typename T>
-struct LaunchIm2Col<T, ConvType::InputBackprop> {
+struct FilterTransformAllocator<T, ConvType::InputBackprop> {
   using Index = int;
   static constexpr auto CType = ConvType::InputBackprop;
   using FilterTransform = im2col::ExtractKernelTiles<T, CType>;
-  using InputTransform = im2col::ExtractInputTiles<T, CType>;
-
-  static bool launch(Eigen::SyclDevice const& device, T* const output,
-                     T const* const input, T const* const filter,
-                     const SYCLConv2DParams& params) {
-    cl::sycl::queue& sycl_queue = device.sycl_queue();
-    cl::sycl::device const& sycl_device = sycl_queue.get_device();
-
-    const im2col::TileInfo tile_info = im2col::get_tile_info<CType>(params);
-
-    const size_t alloc_size_per_image =
-        tile_info.rows * tile_info.cols * tile_info.size * sizeof(T);
-    const im2col::AllocInfo alloc_info = im2col::get_alloc_info<CType>(
-        sycl_device, params, alloc_size_per_image);
-    size_t images_per_alloc = alloc_info.images_per_alloc;
-
+  static T const* get_transform(Eigen::SyclDevice const& device,
+                                T const* const filter,
+                                SYCLConv2DParams const& params) {
     const size_t filter_size = params.window_rows_ * params.window_cols_ *
                                params.channels_ * params.features_;
     const size_t filter_size_bytes = filter_size * sizeof(T);
@@ -180,7 +123,192 @@ struct LaunchIm2Col<T, ConvType::InputBackprop> {
                                       params.features_;
     sycl_conv::launch_transform<FilterTransform>(
         device, filter, filter_transform, fil_transform_items, params, 0);
+    return filter_transform;
+  }
+  static void deallocate(Eigen::SyclDevice const& device,
+                         T const* const filter_transform) {
+    // Need to strip the const from the pointer type to allow the device to
+    // deallocate it. The alternative to this const_cast would be to remove the
+    // const from the pointer types used everywhere else, but it is useful to
+    // have the extra const checking.
+    T* filter = const_cast<T*>(filter_transform);
+    device.deallocate(filter);
+  }
+};
+struct Offsets {
+  int in;
+  int out;
+};
+template <ConvType CType>
+inline Offsets calculate_offsets(int i, int images_per_alloc,
+                                 SYCLConv2DParams const& params) {
+  const int in_offset = i * images_per_alloc * params.in_rows_ *
+                        params.in_cols_ * params.channels_;
+  const int out_offset = i * images_per_alloc * params.out_rows_ *
+                         params.out_cols_ * params.features_;
+  Offsets result{in_offset, out_offset};
+  return result;
+}
+template <>
+inline Offsets calculate_offsets<ConvType::InputBackprop>(
+    int i, int images_per_alloc, SYCLConv2DParams const& params) {
+  const int in_offset = i * images_per_alloc * params.out_rows_ *
+                        params.out_cols_ * params.features_;
+  const int out_offset = i * images_per_alloc * params.in_rows_ *
+                         params.in_cols_ * params.channels_;
+  Offsets result{in_offset, out_offset};
+  return result;
+}
+template <>
+inline Offsets calculate_offsets<ConvType::FilterBackprop>(
+    int i, int images_per_alloc, SYCLConv2DParams const& params) {
+  const int in_offset = i * images_per_alloc * params.in_rows_ *
+                        params.in_cols_ * params.channels_;
+  const int out_offset = i * images_per_alloc * params.out_rows_ *
+                         params.out_cols_ * params.features_;
+  Offsets result{in_offset, out_offset};
+  return result;
+}
+template <typename T, ConvType CType>
+struct RunIm2ColAllocated;
+template <typename T>
+struct RunIm2ColAllocated<T, ConvType::Forward> {
+  using Index = int;
+  static constexpr auto CType = ConvType::Forward;
+  using InputTransform = im2col::ExtractInputTiles<T, CType>;
 
+  static void run(Eigen::SyclDevice const& device, T* const output,
+                  Index const out_offset, T const* const input,
+                  Index const in_offset, T const* const filter,
+                  T* const transform, const SYCLConv2DParams& params,
+                  TileInfo tile_info) {
+    const size_t alloc_size_per_image =
+        tile_info.number * tile_info.size * sizeof(T);
+    const Index n_tiles = params.batch_ * tile_info.number;
+    const size_t actual_transform_size = alloc_size_per_image * params.batch_;
+
+    device.memset(transform, 0, actual_transform_size);
+    const Index in_transform_items =
+        params.batch_ * params.in_rows_ * params.in_cols_ * params.channels_;
+    sycl_conv::launch_transform<InputTransform>(device, input, transform,
+                                                in_transform_items, params,
+                                                in_offset, tile_info.size);
+    sycl_conv::launch_matmul<false, false>(
+        device, transform, filter, output + out_offset, static_cast<T>(0),
+        n_tiles, tile_info.size, params.features_);
+  }
+};
+template <typename T>
+struct RunIm2ColAllocated<T, ConvType::InputBackprop> {
+  using Index = int;
+  static constexpr auto CType = ConvType::InputBackprop;
+  using InputTransform = im2col::ExtractInputTiles<T, CType>;
+
+  static void run(Eigen::SyclDevice const& device, T* const output,
+                  Index const out_offset, T const* const input,
+                  Index const in_offset, T const* const filter_transform,
+                  T* const transform, const SYCLConv2DParams& params,
+                  TileInfo tile_info) {
+    const size_t alloc_size_per_image =
+        tile_info.number * tile_info.size * sizeof(T);
+    const Index n_tiles = params.batch_ * tile_info.number;
+    const size_t actual_transform_size = alloc_size_per_image * params.batch_;
+
+    device.memset(transform, 0, actual_transform_size);
+    const Index in_transform_items =
+        params.batch_ * params.out_rows_ * params.out_cols_ * params.features_;
+    sycl_conv::launch_transform<InputTransform>(device, input, transform,
+                                                in_transform_items, params,
+                                                in_offset, tile_info.size);
+    sycl_conv::launch_matmul<false, false>(
+        device, transform, filter_transform, output + out_offset,
+        static_cast<T>(0), n_tiles, tile_info.size, params.channels_);
+  }
+};
+template <typename T>
+struct RunIm2ColAllocated<T, ConvType::FilterBackprop> {
+  using Index = int;
+  static constexpr auto CType = ConvType::FilterBackprop;
+  using InputTransform = im2col::ExtractInputTiles<T, CType>;
+
+  static void run(Eigen::SyclDevice const& device, T* const output,
+                  Index const out_offset, T const* const input,
+                  Index const in_offset, T const* const filter,
+                  T* const transform, SYCLConv2DParams const& params,
+                  TileInfo tile_info) {
+    // Here the tensors are assumed to be the following:
+    //  - 'input' is the original input to the initial convolution.
+    //  - 'output' is the filter backprop tensor.
+    //  - 'filter' is the output of the initial convolution, used here as the
+    // filter over the input.
+    //
+    //  The params expected is the kernel params, which has:
+    //   - window dims given by the size of the 'filter' tensor.
+    //   - out dims given by the size of the 'output' tensor.
+    const Index n_tiles = tile_info.number;
+    const Index tile_size = params.batch_ * tile_info.size;
+    const size_t alloc_size_per_image =
+        tile_info.size * tile_info.number * sizeof(T);
+    const size_t actual_transform_size = alloc_size_per_image * params.batch_;
+
+    device.memset(transform, 0, actual_transform_size);
+    const Index in_transform_items =
+        params.batch_ * params.in_rows_ * params.in_cols_ * params.channels_;
+    sycl_conv::launch_transform<InputTransform>(device, input, transform,
+                                                in_transform_items, params,
+                                                in_offset, tile_size);
+    if (in_offset == 0) {
+      sycl_conv::launch_matmul<false, false>(
+          device, transform, filter + out_offset, output, static_cast<T>(0),
+          n_tiles, tile_size, params.features_);
+    } else {
+      sycl_conv::launch_matmul<false, false>(
+          device, transform, filter + out_offset, output, static_cast<T>(1),
+          n_tiles, tile_size, params.features_);
+      // For Eigen, this matmul with non-zero alpha will trigger an
+      // allocation. We need to ensure that we synchronize here to prevent
+      // allocation failures with large buffers.
+      device.synchronize();
+    }
+  }
+};
+template <ConvType CType>
+inline SYCLConv2DParams get_params(SYCLConv2DParams params) {
+  return params;
+}
+template <>
+inline SYCLConv2DParams get_params<ConvType::FilterBackprop>(
+    SYCLConv2DParams params) {
+  std::swap(params.out_rows_, params.window_rows_);
+  std::swap(params.out_cols_, params.window_cols_);
+  std::swap(params.stride_rows_, params.dilation_rows_);
+  std::swap(params.stride_cols_, params.dilation_cols_);
+  return params;
+}
+}
+template <typename T, ConvType CType>
+struct LaunchIm2Col {
+  using Index = int;
+
+  static bool launch(Eigen::SyclDevice const& device, T* const output,
+                     T const* const input, T const* const filter,
+                     const SYCLConv2DParams& params) {
+    cl::sycl::queue& sycl_queue = device.sycl_queue();
+    cl::sycl::device const& sycl_device = sycl_queue.get_device();
+
+    const im2col::TileInfo tile_info = im2col::get_tile_info<CType>(params);
+
+    const size_t alloc_size_per_image =
+        tile_info.number * tile_info.size * sizeof(T);
+    const im2col::AllocInfo alloc_info = im2col::get_alloc_info<CType>(
+        sycl_device, params, alloc_size_per_image);
+    size_t images_per_alloc = alloc_info.images_per_alloc;
+
+    T const* const filter_transform =
+        im2col::FilterTransformAllocator<T, CType>::get_transform(
+            device, filter, params);
+
+    SYCLConv2DParams kernel_params = im2col::get_params<CType>(params);
     // When the number of input transforms required is greater than one, it is
     // because each transform buffer is right on the limit of what can be
     // allocated on the device. This means that we need to reuse the same
@@ -194,28 +322,17 @@ struct LaunchIm2Col<T, ConvType::InputBackprop> {
     T* const transform = static_cast<T*>(device.allocate(transform_size));
 
     for (int i = 0; i < alloc_info.n_input_transforms; ++i) {
-      const Index in_offset = i * images_per_alloc * params.out_rows_ *
-                              params.out_cols_ * params.features_;
-      const Index out_offset = i * images_per_alloc * params.in_rows_ *
-                               params.in_cols_ * params.channels_;
+      im2col::Offsets offset =
+          im2col::calculate_offsets<CType>(i, images_per_alloc, params);
+      assert(i == 0 || in_offset > 0);
+      assert(i == 0 || out_offset > 0);
       if (i == alloc_info.n_input_transforms - 1) {
         images_per_alloc = alloc_info.last_batch_size;
       }
-      SYCLConv2DParams kernel_params{params};
       kernel_params.batch_ = images_per_alloc;
-      const Index n_tiles = images_per_alloc * tile_info.rows * tile_info.cols;
-      const size_t actual_transform_size =
-          alloc_size_per_image * images_per_alloc;
-
-      device.memset(transform, 0, actual_transform_size);
-      const Index in_transform_items = images_per_alloc * params.out_rows_ *
-                                       params.out_cols_ * params.features_;
-      sycl_conv::launch_transform<InputTransform>(
-          device, input, transform, in_transform_items, kernel_params,
-          in_offset, tile_info.size);
-      sycl_conv::launch_matmul<false, false>(
-          device, transform, filter_transform, output + out_offset,
-          static_cast<T>(0), n_tiles, tile_info.size, params.channels_);
+      im2col::RunIm2ColAllocated<T, CType>::run(
+          device, output, offset.out, input, offset.in, filter_transform,
+          transform, kernel_params, tile_info);
     }
     // At the moment we have to explicitly wait here to ensure that the device
     // queue is cleared before enqueuing the kernels which use huge buffers so
@@ -223,92 +340,8 @@ struct LaunchIm2Col<T, ConvType::InputBackprop> {
     // TODO(jwlawson): Remove wait when SYCL queue handles allocation waiting.
     device.synchronize();
     device.deallocate(transform);
-    device.deallocate(filter_transform);
-    return true;
-  }
-};
-template <typename T>
-struct LaunchIm2Col<T, ConvType::FilterBackprop> {
-  using Index = int;
-  static constexpr auto CType = ConvType::FilterBackprop;
-  using InputTransform = im2col::ExtractInputTiles<T, CType>;
-
-  static bool launch(Eigen::SyclDevice const& device, T* const output,
-                     T const* const input, T const* const filter,
-                     const SYCLConv2DParams& params) {
-    cl::sycl::queue& sycl_queue = device.sycl_queue();
-    cl::sycl::device const& sycl_device = sycl_queue.get_device();
-    const Index n_tiles =
-        params.window_rows_ * params.window_cols_ * params.channels_;
-
-    const size_t alloc_size_per_image =
-        params.out_rows_ * params.out_cols_ * n_tiles * sizeof(T);
-    const im2col::AllocInfo alloc_info = im2col::get_alloc_info<CType>(
-        sycl_device, params, alloc_size_per_image);
-    size_t images_per_alloc = alloc_info.images_per_alloc;
-
-    SYCLConv2DParams kernel_params{params};
-    kernel_params.out_rows_ = params.window_rows_;
-    kernel_params.out_cols_ = params.window_cols_;
-    kernel_params.window_rows_ = params.out_rows_;
-    kernel_params.window_cols_ = params.out_cols_;
-    kernel_params.dilation_rows_ = params.stride_rows_;
-    kernel_params.dilation_cols_ = params.stride_cols_;
-    kernel_params.stride_rows_ = 1;
-    kernel_params.stride_cols_ = 1;
-
-    // When the number of input transforms required is greater than one, it is
-    // because each transform buffer is right on the limit of what can be
-    // allocated on the device. This means that we need to reuse the same
-    // buffer for each iteration of the algorithm, as enqueuing more than one
-    // of these huge buffers can cause CL_MEM_OBJECT_ALLOCATION_FAILURE errors.
-    // Reusing the same buffer will add a little overhead, as the iterations
-    // cannot be run in parallel however it is required to avoid the allocation
-    // failures.
-    // TODO(jwlawson): Remove buffer reuse when sycl queue can handle this.
-    const size_t transform_size = alloc_size_per_image * images_per_alloc;
-    T* const transform = static_cast<T*>(device.allocate(transform_size));
-
-    for (int i = 0; i < alloc_info.n_input_transforms; ++i) {
-      const Index in_offset = i * images_per_alloc * params.in_rows_ *
-                              params.in_cols_ * params.channels_;
-      const Index out_offset = i * images_per_alloc * params.out_rows_ *
-                               params.out_cols_ * params.features_;
-      if (i == alloc_info.n_input_transforms - 1) {
-        images_per_alloc = alloc_info.last_batch_size;
-      }
-      const Index tile_size =
-          images_per_alloc * params.out_rows_ * params.out_cols_;
-      const size_t actual_transform_size =
-          alloc_size_per_image * images_per_alloc;
-      kernel_params.batch_ = images_per_alloc;
-
-      device.memset(transform, 0, actual_transform_size);
-      const Index in_transform_items = images_per_alloc * params.in_rows_ *
-                                       params.in_cols_ * params.channels_;
-      sycl_conv::launch_transform<InputTransform>(
-          device, input, transform, in_transform_items, kernel_params,
-          in_offset, tile_size);
-      if (i == 0) {
-        sycl_conv::launch_matmul<false, false>(
-            device, transform, filter + out_offset, output, static_cast<T>(0),
-            n_tiles, tile_size, params.features_);
-      } else {
-        sycl_conv::launch_matmul<false, false>(
-            device, transform, filter + out_offset, output, static_cast<T>(1),
-            n_tiles, tile_size, params.features_);
-        // For Eigen, this matmul with non-zero alpha will trigger an
-        // allocation. We need to ensure that we synchronize here to prevent
-        // allocation failures with large buffers.
-        device.synchronize();
-      }
-    }
-    // At the moment we have to explicitly wait here to ensure that the device
-    // queue is cleared before enqueuing the kernels which use huge buffers so
-    // that we do not hit any memory allocation failures.
-    // TODO(jwlawson): Remove wait when SYCL queue handles allocation waiting.
-    device.synchronize();
-    device.deallocate(transform);
+    im2col::FilterTransformAllocator<T, CType>::deallocate(device,
+                                                           filter_transform);
     return true;
   }
 };
