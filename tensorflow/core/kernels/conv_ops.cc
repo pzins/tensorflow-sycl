@@ -871,7 +871,8 @@ template class LaunchConv2DOp<GPUDevice, float>;
   REGISTER_KERNEL_BUILDER(                                       \
       Name("Conv2D").Device(DEVICE_SYCL).TypeConstraint<T>("T"), \
       Conv2DOp<SYCLDevice, T>);
-TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL_KERNELS)
+//TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL_KERNELS)
+TF_CALL_float(REGISTER_SYCL_KERNELS)
 #undef REGISTER_SYCL_KERNELS
 #endif  // TENSORFLOW_USE_SYCL
 #endif  // !defined(USE_GEMM_FOR_CONV)
