@@ -22,7 +22,7 @@ inline TileInfo get_tile_info(SYCLConv2DParams const& params, int out_tile_rows,
       RoundRatioUpAboveZero(params.out_rows_, out_tile_rows);
   const int n_tile_cols =
       RoundRatioUpAboveZero(params.out_cols_, out_tile_cols);
-  const int n_tiles = params.batch_ * n_tile_rows * n_tile_cols;
+  const int n_tiles = n_tile_rows * n_tile_cols;
   const TileInfo result{n_tile_rows, n_tile_cols, n_tiles};
   return result;
 }
@@ -67,6 +67,69 @@ inline SYCLConv2DParams get_params<ConvType::FilterBackprop>(
   params.window_cols_ = window_cols;
   return params;
 }
+struct AllocInfo {
+  size_t alloc_limit;
+  size_t images_per_alloc;
+  size_t n_input_transforms;
+  size_t last_batch_size;
+};
+template <ConvType CType>
+inline AllocInfo get_alloc_info(cl::sycl::device const& device,
+                                size_t const batch_size,
+                                size_t const alloc_size_per_image) {
+  size_t alloc_limit =
+      device.get_info<cl::sycl::info::device::max_mem_alloc_size>();
+  if (TF_PREDICT_FALSE(alloc_size_per_image > alloc_limit)) {
+    LOG(WARNING) << "The temporary buffer required by Winograd for a single "
+                    "image is too large to be allocated on the device. This "
+                    "is likely to cause a CL_MEM_OBJECT_ALLOCATION_FAILURE "
+                    "OpenCL error.";
+    VLOG(2) << "buffer size per image: " << alloc_size_per_image
+            << ", device allocation limit: " << alloc_limit;
+    alloc_limit = alloc_size_per_image + 1;
+  }
+  // The number of images per alloc is bounded above by the total number of
+  // images in a batch
+  size_t images_per_alloc =
+      std::min<size_t>(batch_size, alloc_limit / alloc_size_per_image);
+
+  const size_t n_input_transforms =
+      RoundRatioUpAboveZero<size_t>(batch_size, images_per_alloc);
+  images_per_alloc =
+      RoundRatioUpAboveZero<size_t>(batch_size, n_input_transforms);
+  assert(images_per_alloc * alloc_size_per_image < alloc_limit);
+  const size_t last_batch_size =
+      batch_size - images_per_alloc * (n_input_transforms - 1);
+  assert(last_batch_size > 0);
+  assert(last_batch_size <= batch_size);
+  const AllocInfo result{alloc_limit, images_per_alloc, n_input_transforms,
+                         last_batch_size};
+  return result;
+}
+struct Offsets {
+  int in;
+  int out;
+};
+template <ConvType CType>
+inline Offsets calculate_offsets(int i, int images_per_alloc,
+                                 SYCLConv2DParams const& params) {
+  const int in_offset = i * images_per_alloc * params.in_rows_ *
+                        params.in_cols_ * params.channels_;
+  const int out_offset = i * images_per_alloc * params.out_rows_ *
+                         params.out_cols_ * params.features_;
+  Offsets result{in_offset, out_offset};
+  return result;
+}
+template <>
+inline Offsets calculate_offsets<ConvType::FilterBackprop>(
+    int i, int images_per_alloc, SYCLConv2DParams const& params) {
+  const int in_offset = i * images_per_alloc * params.in_rows_ *
+                        params.in_cols_ * params.channels_;
+  const int out_offset = i * images_per_alloc * params.out_rows_ *
+                         params.out_cols_ * params.features_;
+  Offsets result{in_offset, out_offset};
+  return result;
+}
 }  // namespace winograd
 template <typename T, int M, int N, int R, int S, ConvType CType>
 struct LaunchMatmulWinograd {
@@ -86,38 +149,64 @@ struct LaunchMatmulWinograd {
     const winograd::TileInfo tile_info =
         winograd::get_tile_info<CType>(params, M, N);
 
-    size_t const in_transform_bytes =
-        A * B * tile_info.number * params.channels_ * sizeof(T);
-    T* const in_transform =
-        static_cast<T*>(device.allocate_temp(in_transform_bytes));
-    const Index in_transform_items = tile_info.number * params.channels_;
-    sycl_conv::launch_transform<InputTransform>(
-        device, input, in_transform, in_transform_items, params,
-        tile_info.number, tile_info.rows, tile_info.cols);
-
     size_t const fil_transform_bytes =
         A * B * params.channels_ * params.features_ * sizeof(T);
     T* const fil_transform =
         static_cast<T*>(device.allocate_temp(fil_transform_bytes));
     const Index fil_transform_items = params.features_ * params.channels_;
-    sycl_conv::launch_transform<FilterTransform>(device, filter, fil_transform,
-                                                 fil_transform_items, params,
-                                                 tile_info.number);
+    sycl_conv::launch_transform<FilterTransform>(
+        device, filter, fil_transform, fil_transform_items, params, 0);
 
-    size_t const inter_bytes =
+    size_t const in_alloc_size_per_image =
+        A * B * tile_info.number * params.channels_ * sizeof(T);
+    size_t const inter_alloc_size_per_image =
         A * B * tile_info.number * params.features_ * sizeof(T);
+    size_t const alloc_size_per_image =
+        std::max(in_alloc_size_per_image, inter_alloc_size_per_image);
+    const winograd::AllocInfo alloc_info = winograd::get_alloc_info<CType>(
+        device.sycl_queue().get_device(), params.batch_, alloc_size_per_image);
+    size_t images_per_alloc = alloc_info.images_per_alloc;
+
+    size_t const in_transform_bytes =
+        in_alloc_size_per_image * images_per_alloc * sizeof(T);
+    T* const in_transform =
+        static_cast<T*>(device.allocate_temp(in_transform_bytes));
+    size_t const inter_bytes =
+        inter_alloc_size_per_image * images_per_alloc * sizeof(T);
     T* const intermediate = static_cast<T*>(device.allocate_temp(inter_bytes));
-    sycl_conv::launch_batch_matmul<trans_input, trans_filter>(
-        device, in_transform, fil_transform, intermediate, A * B,
-        tile_info.number, params.channels_, params.features_);
+
+    for (int i = 0; i < alloc_info.n_input_transforms; ++i) {
+      winograd::Offsets offset =
+          winograd::calculate_offsets<CType>(i, images_per_alloc, params);
+      assert(i == 0 || in_offset > 0);
+      assert(i == 0 || out_offset > 0);
+      if (i == alloc_info.n_input_transforms - 1) {
+        images_per_alloc = alloc_info.last_batch_size;
+      }
+      SYCLConv2DParams kernel_params{params};
+      kernel_params.batch_ = images_per_alloc;
+
+      const Index in_transform_items =
+          tile_info.number * images_per_alloc * params.channels_;
+      sycl_conv::launch_transform<InputTransform>(
+          device, input, in_transform, in_transform_items, kernel_params,
+          offset.in, tile_info.number * images_per_alloc, tile_info.rows,
+          tile_info.cols);
+
+      sycl_conv::launch_batch_matmul<trans_input, trans_filter>(
+          device, in_transform, fil_transform, intermediate, A * B,
+          tile_info.number * images_per_alloc, params.channels_,
+          params.features_);
+
+      const Index n_out_items =
+          tile_info.number * images_per_alloc * params.features_;
+      sycl_conv::launch_transform<OutputTransform>(
+          device, intermediate, output, n_out_items, kernel_params, offset.out,
+          tile_info.number * images_per_alloc, tile_info.rows, tile_info.cols);
+    }
 
     device.deallocate_temp(fil_transform);
     device.deallocate_temp(in_transform);
-
-    const Index n_out_items = tile_info.number * params.features_;
-    sycl_conv::launch_transform<OutputTransform>(
-        device, intermediate, output, n_out_items, params, tile_info.number,
-        tile_info.rows, tile_info.cols);
 
     device.deallocate_temp(intermediate);
     return true;

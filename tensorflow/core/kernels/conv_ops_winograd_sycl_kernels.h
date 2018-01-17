@@ -391,10 +391,11 @@ struct ExtractInputTiles {
       cl::sycl::accessor<buffer_data, 1, read_mode, global_access>;
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE ExtractInputTiles(
-      Index const n_tiles, Index const n_tile_rows, Index const n_tile_cols,
-      SYCLConv2DParams const& params, read_accessor const input,
-      write_accessor output)
-      : n_elems_{params.channels_ * n_tile_cols * n_tile_rows * params.batch_},
+      Index const in_offset, Index const n_tiles, Index const n_tile_rows,
+      Index const n_tile_cols, SYCLConv2DParams const& params,
+      read_accessor const input, write_accessor output)
+      : in_offset_{in_offset},
+        n_elems_{params.channels_ * n_tile_cols * n_tile_rows * params.batch_},
         n_tiles_{n_tiles},
         n_tile_rows_{n_tile_rows},
         n_tile_cols_{n_tile_cols},
@@ -409,7 +410,8 @@ struct ExtractInputTiles {
   inline TF_ATTRIBUTE_ALWAYS_INLINE void operator()(cl::sycl::item<1> item) {
     Index index = item.get(0);
     if (index < n_elems_) {
-      const T* input_data = ConvertToActualTypeSycl(T, input_accessor_);
+      const T* input_data =
+          ConvertToActualTypeSycl(T, input_accessor_) + in_offset_;
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
 
       const helpers::TensorIndex2D tile_channel_idx =
@@ -446,6 +448,7 @@ struct ExtractInputTiles {
   }
 
  private:
+  const Index in_offset_;
   const Index n_elems_;
   const Index n_tiles_;
   const Index n_tile_rows_;
@@ -745,10 +748,11 @@ struct ExtractOutputTiles {
       cl::sycl::accessor<buffer_data, 1, read_mode, global_access>;
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE ExtractOutputTiles(
-      Index const n_tiles, Index const n_tile_rows, Index const n_tile_cols,
-      SYCLConv2DParams const& params, read_accessor const input,
-      write_accessor output)
-      : n_threads_{params.features_ * n_tile_cols * n_tile_rows *
+      Index const out_offset, Index const n_tiles, Index const n_tile_rows,
+      Index const n_tile_cols, SYCLConv2DParams const& params,
+      read_accessor const input, write_accessor output)
+      : out_offset_{out_offset},
+        n_threads_{params.features_ * n_tile_cols * n_tile_rows *
                    params.batch_},
         n_tiles_{n_tiles},
         n_tile_rows_{n_tile_rows},
@@ -763,7 +767,8 @@ struct ExtractOutputTiles {
     Index index = item.get(0);
     if (index < n_threads_) {
       const T* input_data = ConvertToActualTypeSycl(T, input_accessor_);
-      T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
+      T* output_data =
+          ConvertToActualTypeSycl(T, output_accessor_) + out_offset_;
 
       const helpers::TensorIndex2D tile_feature_idx =
           helpers::unflatten2d<Index, false>(index, n_features_, n_features_);
@@ -799,6 +804,7 @@ struct ExtractOutputTiles {
   }
 
  private:
+  const Index out_offset_;
   const Index n_threads_;
   const Index n_tiles_;
   const Index n_tile_rows_;
