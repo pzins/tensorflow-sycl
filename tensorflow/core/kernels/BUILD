@@ -3126,7 +3126,10 @@ tf_kernel_library(
     name = "depthwise_conv_grad_op",
     hdrs = [
         "depthwise_conv_op.h",
-    ],
+    ] + if_sycl([
+        "depthwise_conv_op_sycl.h",
+        "conv_ops_sycl_common.h",
+    ]),
     prefix = "depthwise_conv_grad_op",
     deps = [
         ":bounds_check",
