@@ -39,6 +39,10 @@ limitations under the License.
 #include "tensorflow/core/platform/mutex.h"
 #include "tensorflow/core/platform/thread_annotations.h"
 #include "tensorflow/core/public/version.h"
+#ifdef TENSORFLOW_USE_SYCL
+#include "tensorflow/core/common_runtime/sycl/sycl_device.h"
+#endif
+
 
 using tensorflow::int64;
 using tensorflow::string;
@@ -210,6 +214,13 @@ TFE_TensorHandle* TFE_TensorHandleCopyToDevice(TFE_TensorHandle* h,
   // With that setup, Sync()ing across all 3 streams should be sufficient
   // but more than necessary (since it waits for operations that might have
   // nothing to do with this tensor to complete).
+  #ifdef TENSORFLOW_USE_SYCL
+  //SYCL will automatically handle the dependency asynchronously. So there is no need
+  // to have expensive sync here.
+  if(std::is_same<tensorflow::Device, tensorflow::SYCLDevice>::value)
+    status->status = tensorflow::Status::OK();
+  else
+  #endif
   status->status = srcd->Sync();
   tensorflow::Notification n;
   tensorflow::CopyTensor::ViaDMA("copy", src_device_context, dst_device_context,

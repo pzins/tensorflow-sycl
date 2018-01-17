@@ -35,9 +35,14 @@ inline void SYCLmemcpy(Eigen::SyclDevice const& device,
   const size_t size = src_tensor.TotalBytes();
   void* dst_ptr = GetBase(dst_tensor);
   void const* src_ptr = GetBase(&src_tensor);
-
+  TensorReference input_ref(src_tensor);
+  TensorReference output_ref(*dst_tensor);
+  std::function<void()> syclCallBack = [input_ref, output_ref]() {
+    input_ref.Unref();
+    output_ref.Unref();
+  };
 #define COPY_WITH_TYPE(T) \
-  device.memcpy(dst_ptr, static_cast<T const*>(src_ptr), size);
+  device.memcpy(dst_ptr, static_cast<T const*>(src_ptr), size, syclCallBack);
   switch (src_tensor.dtype()) {
     case DT_COMPLEX128:
       COPY_WITH_TYPE(cl::sycl::cl_ulong2);
@@ -71,7 +76,9 @@ inline void SYCLmemcpy(Eigen::SyclDevice const& device,
       break;
     default:
       LOG(FATAL) << "Unknown data type " << src_tensor.dtype();
+      syclCallBack();
       break;
+
   }
 #undef COPY_WITH_TYPE
 }
