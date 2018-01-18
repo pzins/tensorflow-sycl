@@ -82,7 +82,7 @@ struct LaunchConv2DKernel {
   static constexpr auto write_mode = Functor::write_mode;
   using Index = int;
 
-  static void launch(Eigen::SyclDevice const& device, T* const output,
+  static bool launch(Eigen::SyclDevice const& device, T* const output,
                      T const* const input, T const* const filter,
                      SYCLConv2DParams const& params) {
     const Index output_size = get_output_size<CType>(params);
@@ -131,6 +131,7 @@ struct LaunchConv2DKernel {
     } else {
       LAUNCH_CONV(params, true);
     }
+    return true;
 #undef LAUNCH_CONV
 #undef USE_STATIC_CONV
 #undef LAUNCH_DEFAULT_CONV
@@ -147,7 +148,7 @@ struct LaunchNCHWConv2DKernel {
   static constexpr auto write_mode = Functor::write_mode;
   using Index = int;
 
-  static void launch(Eigen::SyclDevice const& device, T* const output,
+  static bool launch(Eigen::SyclDevice const& device, T* const output,
                      T const* const input, T const* const filter,
                      SYCLConv2DParams const& params) {
     const Index output_size = direct::get_output_size<CType>(params);
@@ -196,6 +197,7 @@ struct LaunchNCHWConv2DKernel {
     } else {
       LAUNCH_CONV(params, true);
     }
+    return true;
 #undef LAUNCH_CONV
 #undef USE_STATIC_CONV
 #undef LAUNCH_DEFAULT_CONV
