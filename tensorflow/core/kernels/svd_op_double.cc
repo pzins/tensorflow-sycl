@@ -15,7 +15,6 @@ limitations under the License.
 
 // Eigen Core has no SYCL backend
 #define EIGEN_DONT_VECTORIZE
-#define EIGEN_DONT_VECTORIZE_SYCL
 #ifdef EIGEN_USE_SYCL
  #undef EIGEN_USE_SYCL
 #endif  // EIGEN_USE_SYCL
