@@ -1033,9 +1033,11 @@ REGISTER_KERNEL(float);
 
 #ifdef TENSORFLOW_USE_SYCL
 #define REGISTER_KERNEL(T)                                          \
-  REGISTER_KERNEL_BUILDER(                                          \
-      Name("BlockLSTM").Device(DEVICE_SYCL).TypeConstraint<T>("T"), \
-      BlockLSTMOp<SYCLDevice, T, false>);
+  REGISTER_KERNEL_BUILDER(Name("BlockLSTM")                         \
+                              .Device(DEVICE_SYCL)                  \
+                              .HostMemory("seq_len_max")            \
+                              .TypeConstraint<T>("T"),              \
+                          BlockLSTMOp<SYCLDevice, T, false>);
 REGISTER_KERNEL(float);
 // REGISTER_KERNEL(double);
 #undef REGISTER_KERNEL
@@ -1317,10 +1319,12 @@ REGISTER_KERNEL(float);
 #undef REGISTER_KERNEL
 
 #ifdef TENSORFLOW_USE_SYCL
-#define REGISTER_KERNEL(T)                                              \
-  REGISTER_KERNEL_BUILDER(                                              \
-      Name("BlockLSTMGrad").Device(DEVICE_SYCL).TypeConstraint<T>("T"), \
-      BlockLSTMGradOp<SYCLDevice, T, false>);
+#define REGISTER_KERNEL(T)                                            \
+  REGISTER_KERNEL_BUILDER(Name("BlockLSTMGrad")                       \
+                            .Device(DEVICE_SYCL)                      \
+                            .HostMemory("seq_len_max")                \
+                            .TypeConstraint<T>("T"),                  \
+                          BlockLSTMGradOp<SYCLDevice, T, false>);
 REGISTER_KERNEL(float);
 // REGISTER_KERNEL(double);
 #undef REGISTER_KERNEL
