@@ -131,6 +131,7 @@ struct LaunchConv2DKernel {
     } else {
       LAUNCH_CONV(params, true);
     }
+    device.synchronize();
     return true;
 #undef LAUNCH_CONV
 #undef USE_STATIC_CONV

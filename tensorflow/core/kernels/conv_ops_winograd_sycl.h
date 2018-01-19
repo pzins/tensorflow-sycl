@@ -81,7 +81,7 @@ inline AllocInfo get_alloc_info(cl::sycl::queue& queue,
                                 size_t const alloc_size_per_image,
                                 bool try_wait_if_alloc_fails = true) {
   size_t alloc_limit =
-      device.get_info<cl::sycl::info::device::max_mem_alloc_size>() / 2;
+      device.get_info<cl::sycl::info::device::max_mem_alloc_size>() / 4;
   bool alloc_warning = false;
   if (TF_PREDICT_FALSE(alloc_size_per_image > alloc_limit)) {
     if (try_wait_if_alloc_fails) {
@@ -169,7 +169,7 @@ struct LaunchMatmulWinograd {
     size_t const fil_transform_bytes =
         A * B * params.channels_ * params.features_ * sizeof(T);
     const size_t alloc_limit =
-        sycl_device.get_info<cl::sycl::info::device::max_mem_alloc_size>();
+        sycl_device.get_info<cl::sycl::info::device::max_mem_alloc_size>() / 4;
     if (TF_PREDICT_FALSE(fil_transform_bytes > alloc_limit)) {
       VLOG(1) << "The temporary buffer required by Winograd for the "
                  "filter transform is too large to be allocated on the "
@@ -238,6 +238,7 @@ struct LaunchMatmulWinograd {
     device.deallocate(fil_transform);
     device.deallocate(in_transform);
     device.deallocate(intermediate);
+    device.synchronize();
     return true;
   }
 };
@@ -346,6 +347,7 @@ struct LaunchMatmulWinograd<T, M, N, R, S, ConvType::FilterBackprop> {
     device.deallocate(fil_transform);
     device.deallocate(in_transform);
     device.deallocate(intermediate);
+    device.synchronize();
     return true;
   }
 };

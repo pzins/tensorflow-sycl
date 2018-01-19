@@ -60,7 +60,7 @@ inline AllocInfo get_alloc_info(cl::sycl::queue queue,
                                 size_t const alloc_size_per_image,
                                 bool try_wait_if_alloc_fails = true) {
   size_t alloc_limit =
-      device.get_info<cl::sycl::info::device::max_mem_alloc_size>() / 2;
+      device.get_info<cl::sycl::info::device::max_mem_alloc_size>() / 4;
   bool alloc_warning = false;
   if (TF_PREDICT_FALSE(alloc_size_per_image > alloc_limit)) {
     if (try_wait_if_alloc_fails) {
@@ -351,14 +351,14 @@ struct LaunchIm2Col {
           device, output, offset.out, input, offset.in, filter_transform,
           transform, kernel_params, tile_info);
     }
+    device.deallocate(transform);
+    im2col::FilterTransformAllocator<T, CType>::deallocate(device,
+                                                           filter_transform);
     // At the moment we have to explicitly wait here to ensure that the device
     // queue is cleared before enqueuing the kernels which use huge buffers so
     // that we do not hit any memory allocation failures.
     // TODO(jwlawson): Remove wait when SYCL queue handles allocation waiting.
     device.synchronize();
-    device.deallocate(transform);
-    im2col::FilterTransformAllocator<T, CType>::deallocate(device,
-                                                           filter_transform);
     return true;
   }
 };
