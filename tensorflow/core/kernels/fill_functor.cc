@@ -59,7 +59,7 @@ DEFINE_SETZERO_CPU(Variant);
 template <typename T>
 void SetZeroFunctor<Eigen::SyclDevice, T>::operator()(
     const Eigen::SyclDevice& d, typename TTypes<T>::Flat out) {
-      To32Bit(out).device(d) = To32Bit(out).constant(T(0));
+      out.device(d) = out.constant(T(0));
 }
 
 #define DEFINE_SETZERO_SYCL(T) \
