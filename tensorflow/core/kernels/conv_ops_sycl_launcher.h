@@ -9,8 +9,8 @@
 
 #include "tensorflow/core/kernels/conv_ops_sycl_selectors.h"
 
-#include "tensorflow/core/kernels/conv_ops_im2col_sycl.h"
 #include "tensorflow/core/kernels/conv_ops_direct_sycl.h"
+#include "tensorflow/core/kernels/conv_ops_im2col_sycl.h"
 #include "tensorflow/core/kernels/conv_ops_winograd_sycl.h"
 
 namespace tensorflow {
@@ -94,24 +94,29 @@ static inline void launch_conv2d(backend_type const& backend,
                                  SYCLConv2DParams& params, T* const output,
                                  algorithm_selector& selector) {
   algorithm algo = selector.get_selection(params);
-#define CALL_LAUNCHER(selected)                                              \
-  Launcher<T, backend_type, selected, CType>::launch(backend, output, input, \
-                                                     filter, params);
-#define CASE(selected)                  \
-  case algorithm::selected:             \
-    CALL_LAUNCHER(algorithm::selected); \
+#define CALL_LAUNCHER(result, selected)                        \
+  result = Launcher<T, backend_type, selected, CType>::launch( \
+      backend, output, input, filter, params);
+#define CASE(result, selected)                  \
+  case algorithm::selected:                     \
+    CALL_LAUNCHER(result, algorithm::selected); \
     break;
 
+  bool result;
   switch (algo) {
-    CASE(matmul);
-    CASE(winograd_3x1);
-    CASE(winograd_1x3);
-    CASE(winograd_3x3);
-    CASE(im2col);
-    CASE(direct);
-    CASE(not_supported);
+    CASE(result, matmul);
+    CASE(result, winograd_3x1);
+    CASE(result, winograd_1x3);
+    CASE(result, winograd_3x3);
+    CASE(result, im2col);
+    CASE(result, direct);
+    CASE(result, not_supported);
   }
 #undef CASE
+  if (!result) {
+    // Fall back to using direct convolution which does not require allocations.
+    CALL_LAUNCHER(result, algorithm::direct);
+  }
 #undef CALL_LAUNCHER
 }
 }  // namespace tensorflow

@@ -51,38 +51,52 @@ struct AllocInfo {
   size_t images_per_alloc;
   size_t n_input_transforms;
   size_t last_batch_size;
+  bool alloc_warning;
 };
 template <ConvType CType>
-inline AllocInfo get_alloc_info(cl::sycl::device const& device,
-                                SYCLConv2DParams const& params,
-                                size_t const alloc_size_per_image) {
+inline AllocInfo get_alloc_info(cl::sycl::queue queue,
+                                cl::sycl::device const& device,
+                                size_t const batch_size,
+                                size_t const alloc_size_per_image,
+                                bool try_wait_if_alloc_fails = true) {
   size_t alloc_limit =
-      device.get_info<cl::sycl::info::device::max_mem_alloc_size>();
+      device.get_info<cl::sycl::info::device::max_mem_alloc_size>() / 4;
+  bool alloc_warning = false;
   if (TF_PREDICT_FALSE(alloc_size_per_image > alloc_limit)) {
-    LOG(WARNING) << "The temporary buffer required by im2col for a single "
-                    "image is too large to be allocated on the device. This "
-                    "is likely to cause a CL_MEM_OBJECT_ALLOCATION_FAILURE "
-                    "OpenCL error.";
-    VLOG(2) << "buffer size per image: " << alloc_size_per_image
-            << ", device allocation limit: " << alloc_limit;
-    alloc_limit = alloc_size_per_image + 1;
+    if (try_wait_if_alloc_fails) {
+      VLOG(2) << "Im2col requires a temporary buffer that is too large to "
+                 "allocate. Waiting for the device to clear its queue before "
+                 "trying again.";
+      queue.wait_and_throw();
+      return get_alloc_info<CType>(queue, device, batch_size,
+                                   alloc_size_per_image, false);
+    } else {
+      VLOG(1) << "The temporary buffer required by im2col for a single "
+                 "image is too large to be allocated on the device. This "
+                 "is likely to cause a CL_MEM_OBJECT_ALLOCATION_FAILURE "
+                 "OpenCL error.";
+      VLOG(2) << "buffer size per image: " << alloc_size_per_image
+              << ", device allocation limit: " << alloc_limit;
+      alloc_limit = alloc_size_per_image + 1;
+      alloc_warning = true;
+    }
   }
   // The number of images per alloc is bounded above by the total number of
   // images in a batch
   size_t images_per_alloc =
-      std::min<size_t>(params.batch_, alloc_limit / alloc_size_per_image);
+      std::min<size_t>(batch_size, alloc_limit / alloc_size_per_image);
 
   const size_t n_input_transforms =
-      RoundRatioUpAboveZero<size_t>(params.batch_, images_per_alloc);
+      RoundRatioUpAboveZero<size_t>(batch_size, images_per_alloc);
   images_per_alloc =
-      RoundRatioUpAboveZero<size_t>(params.batch_, n_input_transforms);
+      RoundRatioUpAboveZero<size_t>(batch_size, n_input_transforms);
   assert(images_per_alloc * alloc_size_per_image < alloc_limit);
   const size_t last_batch_size =
-      params.batch_ - images_per_alloc * (n_input_transforms - 1);
+      batch_size - images_per_alloc * (n_input_transforms - 1);
   assert(last_batch_size > 0);
-  assert(last_batch_size <= params.batch_);
+  assert(last_batch_size <= batch_size);
   const AllocInfo result{alloc_limit, images_per_alloc, n_input_transforms,
-                         last_batch_size};
+                         last_batch_size, alloc_warning};
   return result;
 }
 /**
@@ -298,15 +312,18 @@ struct LaunchIm2Col {
 
     const im2col::TileInfo tile_info = im2col::get_tile_info<CType>(params);
 
-    const size_t alloc_size_per_image =
-        tile_info.number * tile_info.size * sizeof(T);
-    const im2col::AllocInfo alloc_info = im2col::get_alloc_info<CType>(
-        sycl_device, params, alloc_size_per_image);
-    size_t images_per_alloc = alloc_info.images_per_alloc;
-
     T const* const filter_transform =
         im2col::FilterTransformAllocator<T, CType>::get_transform(
             device, filter, params);
+
+    const size_t alloc_size_per_image =
+        tile_info.number * tile_info.size * sizeof(T);
+    const im2col::AllocInfo alloc_info = im2col::get_alloc_info<CType>(
+        sycl_queue, sycl_device, params.batch_, alloc_size_per_image);
+    size_t images_per_alloc = alloc_info.images_per_alloc;
+    if (alloc_info.alloc_warning) {
+      return false;
+    }
 
     SYCLConv2DParams kernel_params = im2col::get_params<CType>(params);
     // When the number of input transforms required is greater than one, it is
@@ -334,14 +351,14 @@ struct LaunchIm2Col {
           device, output, offset.out, input, offset.in, filter_transform,
           transform, kernel_params, tile_info);
     }
+    device.deallocate(transform);
+    im2col::FilterTransformAllocator<T, CType>::deallocate(device,
+                                                           filter_transform);
     // At the moment we have to explicitly wait here to ensure that the device
     // queue is cleared before enqueuing the kernels which use huge buffers so
     // that we do not hit any memory allocation failures.
     // TODO(jwlawson): Remove wait when SYCL queue handles allocation waiting.
     device.synchronize();
-    device.deallocate(transform);
-    im2col::FilterTransformAllocator<T, CType>::deallocate(device,
-                                                           filter_transform);
     return true;
   }
 };

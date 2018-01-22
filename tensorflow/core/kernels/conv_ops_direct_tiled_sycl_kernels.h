@@ -2,31 +2,149 @@
 #error This file should only be included when compiling with SYCL support
 #endif
 
-#ifndef TENSORFLOW_KERNELS_CONV_OPS_DIRECT_SYCL_KERNELS_H_
-#define TENSORFLOW_KERNELS_CONV_OPS_DIRECT_SYCL_KERNELS_H_
+#ifndef TENSORFLOW_KERNELS_CONV_OPS_DIRECT_TILED_SYCL_KERNELS_H_
+#define TENSORFLOW_KERNELS_CONV_OPS_DIRECT_TILED_SYCL_KERNELS_H_
 
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 
 #include "tensorflow/core/kernels/conv_ops_sycl_common.h"
 #include "tensorflow/core/kernels/conv_ops_sycl_fast_div.h"
+#include "tensorflow/core/kernels/conv_ops_sycl_kernel_helpers.h"
 #include "tensorflow/core/kernels/conv_ops_sycl_param_macros.h"
 
 namespace tensorflow {
 typedef Eigen::SyclDevice SYCLDevice;
-namespace direct {
+namespace direct_tiled {
+struct check_bounds_tag {};
+template <typename T, int width>
+struct InputRow {
+  using Index = int;
+  template <typename _T>
+  inline TF_ATTRIBUTE_ALWAYS_INLINE InputRow(
+      _T const* input, Index const row, Index const n_rows, Index const col,
+      Index const n_cols, Index const channel, Index const n_channels) {
+    for (int i = 0; i < width; ++i) {
+      Index const idx = (row * n_cols + col + i) * n_channels + channel;
+      data[i] = input[idx];
+    }
+  }
+  template <typename _T>
+  inline TF_ATTRIBUTE_ALWAYS_INLINE InputRow(
+      _T const* input, Index const row, Index const n_rows, Index const col,
+      Index const n_cols, Index const channel, Index const n_channels,
+      check_bounds_tag) {
+    for (int i = 0; i < width; ++i) {
+      Index const idx = (row * n_cols + col + i) * n_channels + channel;
+      data[i] =
+          (col + i < 0 || col + i >= n_cols) ? static_cast<_T>(0) : input[idx];
+    }
+  }
+  T data[width];
+};
+template <typename T, int window_rows, int window_cols>
+struct FilterTile {
+  using Index = int;
+  template <typename _T>
+  inline TF_ATTRIBUTE_ALWAYS_INLINE FilterTile(_T const* const input,
+                                               Index const channel,
+                                               Index const n_channels,
+                                               Index const feature,
+                                               Index const n_features) {
+    for (int i = 0; i < window_rows; ++i) {
+      for (int j = 0; j < window_cols; ++j) {
+        Index const idx =
+            ((i * window_cols + j) * n_channels + channel) * n_features +
+            feature;
+        data[i][j] = input[idx];
+      }
+    }
+  }
+  T data[window_rows][window_cols];
+};
+template <typename T, int n_out_rows, int n_out_cols>
+struct OutputTile {
+  using Index = int;
+  template <typename _T>
+  inline TF_ATTRIBUTE_ALWAYS_INLINE void write_out(
+      _T* output, Index const batch, Index const out_row, Index const n_rows,
+      Index const out_col, Index const n_cols, Index const feature,
+      Index const n_features) {
+    Index const offset =
+        ((batch * n_rows + out_row) * n_cols + out_col) * n_features + feature;
+    output += offset;
+    Index const max_row = cl::sycl::min(n_out_rows, n_rows - out_row);
+    Index const max_col = cl::sycl::min(n_out_cols, n_cols - out_col);
+    for (Index tile_row = 0; tile_row < max_row; ++tile_row) {
+      for (Index tile_col = 0; tile_col < max_col; ++tile_col) {
+        Index const idx = (tile_row * n_cols + tile_col) * n_features;
+        output[idx] = data[tile_row][tile_col];
+      }
+    }
+  }
+  T data[n_out_rows][n_out_cols];
+};
+template <typename T, int n_window_rows, int n_window_cols, int n_out_rows,
+          int n_out_cols>
+inline TF_ATTRIBUTE_ALWAYS_INLINE void convolve_1xw_one_row(
+    InputRow<T, n_out_cols + n_window_rows - 1> const& input,
+    FilterTile<T, n_window_rows, n_window_cols> const& filter,
+    OutputTile<T, n_out_rows, n_out_cols>& output, int const out_row,
+    int const filter_row) {
+  for (int out_col = 0; out_col < n_out_cols; ++out_col) {
+    int const in_offset = out_col;
+    for (int filter_col = 0; filter_col < n_window_cols; ++filter_col) {
+      output.data[out_row][out_col] = cl::sycl::mad(
+          input.data[in_offset + filter_col],
+          filter.data[filter_row][filter_col], output.data[out_row][out_col]);
+    }
+  }
+}
+template <typename T, int n_window_rows, int n_window_cols, int n_out_rows,
+          int n_out_cols>
+inline TF_ATTRIBUTE_ALWAYS_INLINE void convolve_1xw_whole_tile(
+    InputRow<T, n_out_cols + n_window_rows - 1> const& input,
+    FilterTile<T, n_window_rows, n_window_cols> const& filter,
+    OutputTile<T, n_out_rows, n_out_cols>& output, int const row_idx) {
+  for (int out_row = 0; out_row < n_out_rows; ++out_row) {
+    int filter_row = row_idx - out_row;
+    if (filter_row >= 0 && filter_row < n_window_rows) {
+      convolve_1xw_one_row(input, filter, output, out_row, filter_row);
+    }
+  }
+}
 /**
  * SYCL kernel for naive convolution computation.
  */
-template <typename T, ConvType CType, bool use_fast_div = false,
-          int static_window = 0, int static_stride = 0>
-struct Conv2DSYCL;
-template <typename T, bool use_fast_div, int static_window, int static_stride>
-struct Conv2DSYCL<T, ConvType::Forward, use_fast_div, static_window,
-                  static_stride> {
+template <typename T, ConvType CType, int tile_rows, int tile_cols,
+          bool use_fast_div, int window_rows, int window_cols,
+          int static_stride = 0>
+struct Conv2DTiledSYCL {
   using Index = int;
   using buffer_data = uint8_t;
   using index_div_type =
       typename fast_div::index_div<Index, use_fast_div>::type;
+  static constexpr auto input_tile_width = tile_cols + window_cols - 1;
+  static constexpr auto read_mode = cl::sycl::access::mode::read;
+  static constexpr auto write_mode = cl::sycl::access::mode::discard_write;
+  static constexpr auto global_access = cl::sycl::access::target::global_buffer;
+  using write_accessor =
+      cl::sycl::accessor<buffer_data, 1, write_mode, global_access>;
+  using read_accessor =
+      cl::sycl::accessor<buffer_data, 1, read_mode, global_access>;
+  Conv2DTiledSYCL(Index n_elems, const SYCLConv2DParams& params,
+                  const read_accessor input, const read_accessor kernel,
+                  write_accessor output) {}
+  inline TF_ATTRIBUTE_ALWAYS_INLINE void operator()(cl::sycl::item<1> item) {}
+};
+template <typename T, int tile_rows, int tile_cols, bool use_fast_div,
+          int window_rows, int window_cols, int static_stride>
+struct Conv2DTiledSYCL<T, ConvType::Forward, tile_rows, tile_cols, use_fast_div,
+                       window_rows, window_cols, static_stride> {
+  using Index = int;
+  using buffer_data = uint8_t;
+  using index_div_type =
+      typename fast_div::index_div<Index, use_fast_div>::type;
+  static constexpr auto input_tile_width = tile_cols + window_cols - 1;
   static constexpr auto read_mode = cl::sycl::access::mode::read;
   static constexpr auto write_mode = cl::sycl::access::mode::discard_write;
   static constexpr auto global_access = cl::sycl::access::target::global_buffer;
@@ -35,15 +153,15 @@ struct Conv2DSYCL<T, ConvType::Forward, use_fast_div, static_window,
   using read_accessor =
       cl::sycl::accessor<buffer_data, 1, read_mode, global_access>;
 
-  inline TF_ATTRIBUTE_ALWAYS_INLINE Conv2DSYCL(Index n_elems,
-                                               const SYCLConv2DParams& params,
-                                               const read_accessor input,
-                                               const read_accessor kernel,
-                                               write_accessor output)
+  inline TF_ATTRIBUTE_ALWAYS_INLINE Conv2DTiledSYCL(
+      Index n_elems, const SYCLConv2DParams& params, const read_accessor input,
+      const read_accessor kernel, write_accessor output)
       : n_elems_{n_elems},
         div_features_{params.features_},
-        div_out_cols_{params.out_cols_},
-        div_out_rows_{params.out_rows_},
+        n_tile_cols_{RoundRatioUpAboveZero(params.out_cols_, tile_cols)},
+        n_tile_rows_{RoundRatioUpAboveZero(params.out_rows_, tile_rows)},
+        div_n_tile_cols_{RoundRatioUpAboveZero(params.out_cols_, tile_cols)},
+        div_n_tile_rows_{RoundRatioUpAboveZero(params.out_rows_, tile_rows)},
         SNN_CONSTRUCT_CONV_PARAMS(params),
         input_accessor_{input},
         kernel_accessor_{kernel},
@@ -57,61 +175,62 @@ struct Conv2DSYCL<T, ConvType::Forward, use_fast_div, static_window,
       const T* kernel_data = ConvertToActualTypeSycl(T, kernel_accessor_);
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
 
-      const Index brc_idx = index / div_features_;
-      const Index feature = index - brc_idx * SNN_PARAM(features_);
+      const helpers::TensorIndex4D tensor_idx =
+          helpers::unflatten4d<Index, use_fast_div>(
+              index, div_n_tile_rows_, n_tile_rows_, div_n_tile_cols_,
+              n_tile_cols_, div_features_, SNN_PARAM(features_));
+      const Index feature = tensor_idx.s3;
+      const Index col_idx = tensor_idx.s2;
+      const Index row_idx = tensor_idx.s1;
+      const Index batch = tensor_idx.s0;
 
-      const Index br_idx = brc_idx / div_out_cols_;
-      const Index col_idx = brc_idx - br_idx * SNN_PARAM(out_cols_);
       const Index cstart =
-          col_idx * SNN_STATIC_PARAM(stride, cols_) - SNN_PARAM(pad_cols_);
-
-      const Index batch = br_idx / div_out_rows_;
-      const Index row_idx = br_idx - batch * SNN_PARAM(out_rows_);
+          col_idx * tile_cols * SNN_STATIC_PARAM(stride, cols_) -
+          SNN_PARAM(pad_cols_);
       const Index rstart =
-          row_idx * SNN_STATIC_PARAM(stride, rows_) - SNN_PARAM(pad_rows_);
+          row_idx * tile_rows * SNN_STATIC_PARAM(stride, rows_) -
+          SNN_PARAM(pad_rows_);
 
-      T out_val = static_cast<T>(0);
+      OutputTile<T, tile_rows, tile_cols> out_tile{};
       const T* input_data_n = input_data +
                               batch * SNN_PARAM(in_cols_) *
                                   SNN_PARAM(in_rows_) * SNN_PARAM(channels_);
-      for (Index r = rstart, i = 0;
-           i < SNN_STATIC_PARAM(window, rows_) && r < SNN_PARAM(in_rows_);
-           ++r, ++i) {
-        if (r >= 0) {
-          for (Index c = cstart, j = 0;
-               j < SNN_STATIC_PARAM(window, cols_) && c < SNN_PARAM(in_cols_);
-               ++c, ++j) {
-            if (c >= 0) {
-              for (Index channel = 0; channel < SNN_PARAM(channels_);
-                   ++channel) {
-                const Index idx =
-                    (r * SNN_PARAM(in_cols_) + c) * SNN_PARAM(channels_) +
-                    channel;
-                const Index k_idx = ((i * SNN_STATIC_PARAM(window, cols_) + j) *
-                                         SNN_PARAM(channels_) +
-                                     channel) *
-                                        SNN_PARAM(features_) +
-                                    feature;
-                out_val += input_data_n[idx] * kernel_data[k_idx];
-              }
-            }
+      for (Index channel = 0; channel < SNN_PARAM(channels_); ++channel) {
+        FilterTile<T, window_rows, window_cols> filter_tile{
+            kernel_data, channel, SNN_PARAM(channels_), feature,
+            SNN_PARAM(features_)};
+        for (Index r = rstart, i = 0;
+             i < window_rows + tile_rows - 1 && r < SNN_PARAM(in_rows_);
+             ++r, ++i) {
+          if (r >= 0) {
+            InputRow<T, input_tile_width> input_tile{
+                input_data_n,         r,
+                SNN_PARAM(in_rows_),  cstart,
+                SNN_PARAM(in_cols_),  channel,
+                SNN_PARAM(channels_), check_bounds_tag{}};
+            convolve_1xw_whole_tile(input_tile, filter_tile, out_tile, i);
           }
         }
       }
-      output_data[index] = out_val;
+      out_tile.write_out(output_data, batch, row_idx * tile_rows,
+                         SNN_PARAM(out_rows_), col_idx * tile_cols,
+                         SNN_PARAM(out_cols_), feature, SNN_PARAM(features_));
     }
   }
 
  private:
   const Index n_elems_;
   const index_div_type div_features_;
-  const index_div_type div_out_cols_;
-  const index_div_type div_out_rows_;
+  const Index n_tile_cols_;
+  const Index n_tile_rows_;
+  const index_div_type div_n_tile_cols_;
+  const index_div_type div_n_tile_rows_;
   SNN_INJECT_CONV_PARAMS;
   const read_accessor input_accessor_;
   const read_accessor kernel_accessor_;
   write_accessor output_accessor_;
 };
+#if 0
 template <typename T, bool use_fast_div, int static_window, int static_stride>
 struct Conv2DSYCL<T, ConvType::InputBackprop, use_fast_div, static_window,
                   static_stride> {
@@ -323,6 +442,7 @@ struct Conv2DSYCL<T, ConvType::FilterBackprop, use_fast_div, static_out,
   const read_accessor kernel_accessor_;
   write_accessor output_accessor_;
 };
+#endif
 }  // namespace direct
 }  // namespace tensorflow
 #endif  // TENSORFLOW_KERNELS_CONV_OPS_DIRECT_SYCL_KERNELS_H_

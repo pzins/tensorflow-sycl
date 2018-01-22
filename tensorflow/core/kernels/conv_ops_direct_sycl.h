@@ -11,6 +11,7 @@
 
 #include "tensorflow/core/kernels/conv_ops_direct_sycl_kernels.h"
 #include "tensorflow/core/kernels/conv_ops_direct_sycl_nchw_kernels.h"
+#include "tensorflow/core/kernels/conv_ops_direct_tiled_sycl_kernels.h"
 
 namespace tensorflow {
 typedef Eigen::SyclDevice SYCLDevice;
@@ -57,6 +58,18 @@ inline size_t get_output_size<ConvType::FilterBackprop>(
   return params.window_rows_ * params.window_cols_ * params.channels_ *
          params.features_;
 }
+template <ConvType CType, int tile_rows, int tile_cols>
+struct tiled_output_size {
+  static size_t get(SYCLConv2DParams const& params) { return 0; }
+};
+template <int tile_rows, int tile_cols>
+struct tiled_output_size<ConvType::Forward, tile_rows, tile_cols> {
+  static size_t get(SYCLConv2DParams const& params) {
+    return params.batch_ * RoundRatioUpAboveZero(params.out_rows_, tile_rows) *
+           RoundRatioUpAboveZero(params.out_cols_, tile_cols) *
+           params.features_;
+  }
+};
 template <ConvType CType>
 inline bool no_fast_div(SYCLConv2DParams const& params);
 template <>
@@ -75,66 +88,124 @@ inline bool no_fast_div<ConvType::FilterBackprop>(
   return params.features_ == 1 || params.channels_ == 1 ||
          params.out_cols_ == 1;
 }
-template <typename T, ConvType CType>
-struct LaunchConv2DKernel {
-  using Functor = Conv2DSYCL<T, CType, false>;
+template <ConvType>
+inline bool use_static_conv(SYCLConv2DParams const& params, int const window,
+                            int const stride) {
+  return (params.window_cols_ == window && params.window_rows_ == window &&
+          params.stride_rows_ == stride && params.stride_cols_ == stride);
+}
+template <typename T, ConvType CType, int tile_rows, int tile_cols,
+          bool use_fast_div, int window_rows, int window_cols, int stride>
+inline bool launch_tiled(Eigen::SyclDevice const& device, T* const output,
+                         T const* const input, T const* const filter,
+                         SYCLConv2DParams const& params) {
+  using Functor = direct_tiled::Conv2DTiledSYCL<T, CType, tile_rows, tile_cols,
+                                                false, window_rows,
+                                                window_cols, stride>;
   static constexpr auto read_mode = Functor::read_mode;
   static constexpr auto write_mode = Functor::write_mode;
   using Index = int;
+  const Index output_size =
+      tiled_output_size<CType, tile_rows, tile_cols>::get(params);
+  const Index workgroup_size = device.maxSyclThreadsPerBlock();
+  const Index n_threads = RoundUpToNearestMultiple(output_size, workgroup_size);
 
-  static void launch(Eigen::SyclDevice const& device, T* const output,
+  auto input_buffer = device.get_sycl_buffer(input);
+  auto filter_buffer = device.get_sycl_buffer(filter);
+  auto output_buffer = device.get_sycl_buffer(output);
+  auto kernel_params = get_kernel_params<CType>(params);
+
+  device.sycl_queue().submit([&](cl::sycl::handler& cgh) {
+    auto input_access = input_buffer.template get_access<read_mode>(cgh);
+    auto filter_access = filter_buffer.template get_access<read_mode>(cgh);
+    auto output_access = output_buffer.template get_access<write_mode>(cgh);
+
+    Functor conv(output_size, kernel_params, input_access, filter_access,
+                 output_access);
+
+    cgh.parallel_for(cl::sycl::range<1>(n_threads), conv);
+  });
+  return true;
+}
+template <typename T, ConvType CType, bool use_fast_div, int window, int stride>
+inline bool launch_direct(Eigen::SyclDevice const& device, T* const output,
+                          T const* const input, T const* const filter,
+                          SYCLConv2DParams const& params) {
+  using Functor = Conv2DSYCL<T, CType, use_fast_div, window, stride>;
+  static constexpr auto read_mode = Functor::read_mode;
+  static constexpr auto write_mode = Functor::write_mode;
+  using Index = int;
+  const Index output_size = get_output_size<CType>(params);
+  const Index workgroup_size = device.maxSyclThreadsPerBlock();
+  const Index n_threads = RoundUpToNearestMultiple(output_size, workgroup_size);
+
+  auto input_buffer = device.get_sycl_buffer(input);
+  auto filter_buffer = device.get_sycl_buffer(filter);
+  auto output_buffer = device.get_sycl_buffer(output);
+  auto kernel_params = get_kernel_params<CType>(params);
+
+  device.sycl_queue().submit([&](cl::sycl::handler& cgh) {
+    auto input_access = input_buffer.template get_access<read_mode>(cgh);
+    auto filter_access = filter_buffer.template get_access<read_mode>(cgh);
+    auto output_access = output_buffer.template get_access<write_mode>(cgh);
+
+    Functor conv(output_size, kernel_params, input_access, filter_access,
+                 output_access);
+
+    cgh.parallel_for(cl::sycl::range<1>(n_threads), conv);
+  });
+  return true;
+}
+template <typename T, ConvType CType>
+struct LaunchConv2DKernel {
+  using Index = int;
+
+  static bool launch(Eigen::SyclDevice const& device, T* const output,
                      T const* const input, T const* const filter,
                      SYCLConv2DParams const& params) {
-    const Index output_size = get_output_size<CType>(params);
-    const Index workgroup_size = device.maxSyclThreadsPerBlock();
-    const Index n_threads =
-        RoundUpToNearestMultiple(output_size, workgroup_size);
-
-    auto input_buffer = device.get_sycl_buffer(input);
-    auto filter_buffer = device.get_sycl_buffer(filter);
-    auto output_buffer = device.get_sycl_buffer(output);
-    auto kernel_params = get_kernel_params<CType>(params);
-
-#define LAUNCH_STATIC_CONV(use_fast_div, window, stride)                     \
-  device.sycl_queue().submit([&](cl::sycl::handler& cgh) {                   \
-    auto input_access = input_buffer.template get_access<read_mode>(cgh);    \
-    auto filter_access = filter_buffer.template get_access<read_mode>(cgh);  \
-    auto output_access = output_buffer.template get_access<write_mode>(cgh); \
-                                                                             \
-    Conv2DSYCL<T, CType, use_fast_div, window, stride> conv(                 \
-        output_size, kernel_params, input_access, filter_access,             \
-        output_access);                                                      \
-                                                                             \
-    cgh.parallel_for(cl::sycl::range<1>(n_threads), conv);                   \
-  });
+#define LAUNCH_TILED_CONV(tile_row, tile_col, use_fast_div, window, stride) \
+  return launch_tiled<T, CType, tile_row, tile_col, use_fast_div, window,   \
+                      window, stride>(device, output, input, filter, params);
+#define LAUNCH_STATIC_CONV(use_fast_div, window, stride)        \
+  return launch_direct<T, CType, use_fast_div, window, stride>( \
+      device, output, input, filter, params);
 #define LAUNCH_DEFAULT_CONV(use_fast_div) LAUNCH_STATIC_CONV(use_fast_div, 0, 0)
-#define USE_STATIC_CONV(params, window, stride)                      \
-  (params.window_cols_ == window && params.window_rows_ == window && \
-   params.stride_rows_ == stride && params.stride_cols_ == stride)
-#define LAUNCH_CONV(params, use_fast_div)     \
-  if (USE_STATIC_CONV(params, 1, 1)) {        \
-    LAUNCH_STATIC_CONV(use_fast_div, 1, 1)    \
-  } else if (USE_STATIC_CONV(params, 3, 1)) { \
-    LAUNCH_STATIC_CONV(use_fast_div, 3, 1)    \
-  } else if (USE_STATIC_CONV(params, 3, 2)) { \
-    LAUNCH_STATIC_CONV(use_fast_div, 3, 2)    \
-  } else if (USE_STATIC_CONV(params, 5, 1)) { \
-    LAUNCH_STATIC_CONV(use_fast_div, 5, 1)    \
-  } else if (USE_STATIC_CONV(params, 5, 2)) { \
-    LAUNCH_STATIC_CONV(use_fast_div, 5, 2)    \
-  } else {                                    \
-    LAUNCH_DEFAULT_CONV(use_fast_div)         \
+#define LAUNCH_CONV(params, use_fast_div)            \
+  if (use_static_conv<CType>(params, 1, 1)) {        \
+    LAUNCH_STATIC_CONV(use_fast_div, 1, 1)           \
+  } else if (use_static_conv<CType>(params, 3, 1)) { \
+    if (CType == ConvType::Forward) {                \
+      LAUNCH_TILED_CONV(3, 4, use_fast_div, 3, 1)    \
+    } else {                                         \
+      LAUNCH_STATIC_CONV(use_fast_div, 3, 1)         \
+    }                                                \
+  } else if (use_static_conv<CType>(params, 3, 2)) { \
+    LAUNCH_STATIC_CONV(use_fast_div, 3, 2)           \
+  } else if (use_static_conv<CType>(params, 5, 1)) { \
+    if (CType == ConvType::Forward) {                \
+      LAUNCH_TILED_CONV(2, 4, use_fast_div, 5, 1)    \
+    } else {                                         \
+      LAUNCH_STATIC_CONV(use_fast_div, 5, 1)         \
+    }                                                \
+  } else if (use_static_conv<CType>(params, 5, 2)) { \
+    LAUNCH_STATIC_CONV(use_fast_div, 5, 2)           \
+  } else {                                           \
+    LAUNCH_DEFAULT_CONV(use_fast_div)                \
   }
 
+    auto kernel_params = get_kernel_params<CType>(params);
     if (no_fast_div<CType>(kernel_params)) {
       LAUNCH_CONV(params, false);
     } else {
       LAUNCH_CONV(params, true);
     }
+    device.synchronize();
+    return true;
 #undef LAUNCH_CONV
 #undef USE_STATIC_CONV
 #undef LAUNCH_DEFAULT_CONV
 #undef LAUNCH_STATIC_CONV
+#undef LAUNCH_TILED_CONV
   }
 };
 
@@ -147,7 +218,7 @@ struct LaunchNCHWConv2DKernel {
   static constexpr auto write_mode = Functor::write_mode;
   using Index = int;
 
-  static void launch(Eigen::SyclDevice const& device, T* const output,
+  static bool launch(Eigen::SyclDevice const& device, T* const output,
                      T const* const input, T const* const filter,
                      SYCLConv2DParams const& params) {
     const Index output_size = direct::get_output_size<CType>(params);
@@ -196,6 +267,7 @@ struct LaunchNCHWConv2DKernel {
     } else {
       LAUNCH_CONV(params, true);
     }
+    return true;
 #undef LAUNCH_CONV
 #undef USE_STATIC_CONV
 #undef LAUNCH_DEFAULT_CONV
