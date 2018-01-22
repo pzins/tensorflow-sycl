@@ -44,7 +44,15 @@ void Worker::CreateWorkerSessionAsync(const CreateWorkerSessionRequest* request,
                                       CreateWorkerSessionResponse* response,
                                       StatusCallback done) {
   Status s = env_->session_mgr->CreateSession(request->session_handle(),
-                                              request->server_def());
+                                              request->server_def(),
+                                              request->isolate_session_state());
+  done(s);
+}
+
+void Worker::DeleteWorkerSessionAsync(const DeleteWorkerSessionRequest* request,
+                                      DeleteWorkerSessionResponse* response,
+                                      StatusCallback done) {
+  Status s = env_->session_mgr->DeleteSession(request->session_handle());
   done(s);
 }
 
@@ -101,6 +109,12 @@ Status Worker::PrepareRunGraph(RunGraphRequestWrapper* req,
 void Worker::RunGraphAsync(CallOptions* opts, RunGraphRequestWrapper* request,
                            MutableRunGraphResponseWrapper* response,
                            StatusCallback done) {
+  if (request->store_errors_in_response_body()) {
+    done = [response, done](const Status& status) {
+      response->set_status(status);
+      done(Status::OK());
+    };
+  }
   if (request->is_partial()) {
     DoPartialRunGraph(opts, request, response, std::move(done));
   } else {

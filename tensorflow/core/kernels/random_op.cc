@@ -709,6 +709,7 @@ void FillPhiloxRandom<SYCLDevice, Distribution>::operator()(
       Name("RandomUniform")                                                    \
           .Device(DEVICE_SYCL)                                                 \
           .HostMemory("shape")                                                 \
+          .TypeConstraint<int32>("T")                                          \
           .TypeConstraint<TYPE>("dtype"),                                      \
       PhiloxRandomOp<SYCLDevice, random::UniformDistribution<                  \
                                      random::PhiloxRandom, TYPE>>);            \
@@ -716,6 +717,7 @@ void FillPhiloxRandom<SYCLDevice, Distribution>::operator()(
       Name("RandomStandardNormal")                                             \
           .Device(DEVICE_SYCL)                                                 \
           .HostMemory("shape")                                                 \
+          .TypeConstraint<int32>("T")                                          \
           .TypeConstraint<TYPE>("dtype"),                                      \
       PhiloxRandomOp<SYCLDevice,                                               \
                      random::NormalDistribution<random::PhiloxRandom, TYPE>>); \
@@ -723,6 +725,7 @@ void FillPhiloxRandom<SYCLDevice, Distribution>::operator()(
       Name("TruncatedNormal")                                                  \
           .Device(DEVICE_SYCL)                                                 \
           .HostMemory("shape")                                                 \
+          .TypeConstraint<int32>("T")                                          \
           .TypeConstraint<TYPE>("dtype"),                                      \
       PhiloxRandomOp<                                                          \
           SYCLDevice,                                                          \
@@ -735,6 +738,7 @@ void FillPhiloxRandom<SYCLDevice, Distribution>::operator()(
                               .HostMemory("shape")               \
                               .HostMemory("minval")              \
                               .HostMemory("maxval")              \
+                              .TypeConstraint<int32>("T")        \
                               .TypeConstraint<IntType>("Tout"),  \
                           RandomUniformIntOp<SYCLDevice, IntType>);
 
