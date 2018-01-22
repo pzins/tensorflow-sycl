@@ -47,7 +47,7 @@ struct ExtractInputTiles<T, ConvType::Forward> {
         output_accessor_{output} {}
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE void operator()(cl::sycl::item<1> item) {
-    Index index = item.get(0);
+    Index index = item.get_id(0);
     if (index < n_items_) {
       const T* input_data =
           ConvertToActualTypeSycl(T, input_accessor_) + in_offset_;
@@ -139,7 +139,7 @@ struct ExtractInputTiles<T, ConvType::InputBackprop> {
         output_accessor_{output} {}
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE void operator()(cl::sycl::item<1> item) {
-    Index index = item.get(0);
+    Index index = item.get_id(0);
     if (index < n_items_) {
       T const* const input_data =
           ConvertToActualTypeSycl(T, input_accessor_) + in_offset_;
@@ -222,7 +222,7 @@ struct ExtractInputTiles<T, ConvType::FilterBackprop> {
         output_accessor_{output} {}
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE void operator()(cl::sycl::item<1> item) {
-    Index index = item.get(0);
+    Index index = item.get_id(0);
     if (index < n_items_) {
       const T* input_data =
           ConvertToActualTypeSycl(T, input_accessor_) + in_offset_;
@@ -328,7 +328,7 @@ struct ExtractKernelTiles<T, ConvType::InputBackprop> {
         output_accessor_{output} {}
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE void operator()(cl::sycl::item<1> item) {
-    Index index = item.get(0);
+    Index index = item.get_id(0);
     if (index < n_items_) {
       T const* const input_data =
           ConvertToActualTypeSycl(T, input_accessor_) + in_offset_;

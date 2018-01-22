@@ -50,7 +50,7 @@ struct Conv2DSYCL<T, ConvType::Forward, use_fast_div, static_window,
         output_accessor_{output} {}
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE void operator()(cl::sycl::item<1> item) {
-    const Index index = item.get(0);
+    const Index index = item.get_id(0);
 
     if (index < n_elems_) {
       const T* input_data = ConvertToActualTypeSycl(T, input_accessor_);
@@ -142,7 +142,7 @@ struct Conv2DSYCL<T, ConvType::InputBackprop, use_fast_div, static_window,
         output_accessor_{output} {}
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE void operator()(cl::sycl::item<1> item) {
-    const Index index = item.get(0);
+    const Index index = item.get_id(0);
     if (index < n_elems_) {
       const T* input_data = ConvertToActualTypeSycl(T, input_accessor_);
       const T* kernel_data = ConvertToActualTypeSycl(T, kernel_accessor_);
@@ -259,7 +259,7 @@ struct Conv2DSYCL<T, ConvType::FilterBackprop, use_fast_div, static_out,
         output_accessor_{output} {}
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE void operator()(cl::sycl::item<1> item) {
-    const Index index = item.get(0);
+    const Index index = item.get_id(0);
     if (index < n_elems_) {
       const T* input_data = ConvertToActualTypeSycl(T, input_accessor_);
       const T* kernel_data = ConvertToActualTypeSycl(T, kernel_accessor_);

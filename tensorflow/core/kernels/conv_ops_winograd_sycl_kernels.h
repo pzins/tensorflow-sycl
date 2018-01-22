@@ -412,7 +412,7 @@ struct ExtractInputTiles {
         output_accessor_{output} {}
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE void operator()(cl::sycl::item<1> item) {
-    Index index = item.get(0);
+    Index index = item.get_id(0);
     if (index < n_elems_) {
       const T* input_data =
           ConvertToActualTypeSycl(T, input_accessor_) + in_offset_;
@@ -495,7 +495,7 @@ struct ExtractInputTiles<T, M, N, R, S, ConvType::FilterBackprop> {
         output_accessor_{output} {}
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE void operator()(cl::sycl::item<1> item) {
-    Index index = item.get(0);
+    Index index = item.get_id(0);
     if (index < n_elems_) {
       const T* input_data =
           ConvertToActualTypeSycl(T, input_accessor_) + in_offset_;
@@ -570,7 +570,7 @@ struct ExtractKernelTiles {
         output_accessor_{output} {}
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE void operator()(cl::sycl::item<1> item) {
-    Index index = item.get(0);
+    Index index = item.get_id(0);
     if (index < n_tiles_) {
       const T* kernel_data = ConvertToActualTypeSycl(T, kernel_accessor_);
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
@@ -626,7 +626,7 @@ struct ExtractKernelTiles<T, M, N, R, S, ConvType::InputBackprop> {
         output_accessor_{output} {}
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE void operator()(cl::sycl::item<1> item) {
-    Index index = item.get(0);
+    Index index = item.get_id(0);
     if (index < n_tiles_) {
       const T* kernel_data = ConvertToActualTypeSycl(T, kernel_accessor_);
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
@@ -694,7 +694,7 @@ struct ExtractKernelTiles<T, M, N, R, S, ConvType::FilterBackprop> {
         output_accessor_{output} {}
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE void operator()(cl::sycl::item<1> item) {
-    Index index = item.get(0);
+    Index index = item.get_id(0);
     if (index < n_threads_) {
       const T* kernel_data =
           ConvertToActualTypeSycl(T, kernel_accessor_) + in_offset_;
@@ -775,7 +775,7 @@ struct ExtractOutputTiles {
         output_accessor_{output} {}
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE void operator()(cl::sycl::item<1> item) {
-    Index index = item.get(0);
+    Index index = item.get_id(0);
     if (index < n_threads_) {
       const T* input_data = ConvertToActualTypeSycl(T, input_accessor_);
       T* output_data =
@@ -849,7 +849,7 @@ struct ExtractOutputTiles<T, M, N, R, S, ConvType::FilterBackprop,
         output_accessor_{output} {}
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE void operator()(cl::sycl::item<1> item) {
-    Index index = item.get(0);
+    Index index = item.get_id(0);
     if (index < n_threads_) {
       const T* input_data = ConvertToActualTypeSycl(T, input_accessor_);
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
