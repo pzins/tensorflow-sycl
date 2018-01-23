@@ -52,7 +52,7 @@ limitations under the License.
 
 #ifdef TF_USE_SYCLDNN
 #include "tensorflow/core/kernels/conv_ops_sycl.h"
-#endif  // TENSORFLOW_USE_SYCL
+#endif  // TF_USE_SYCLDNN
 
 namespace {
 
@@ -128,7 +128,7 @@ struct LaunchConv2DBackpropFilterOp<SYCLDevice, T> {
         filter_backprop->dim_size(1), row_stride, col_stride);
   }
 };
-#endif  // TENSORFLOW_USE_SYCL
+#endif  // TF_USE_SYCLEIGEN
 
 #ifdef TENSORFLOW_USE_LIBXSMM
 template <typename Device, class T>

@@ -53,7 +53,7 @@ limitations under the License.
 
 #ifdef TF_USE_SYCLDNN
 #include "tensorflow/core/kernels/conv_ops_sycl.h"
-#endif  // TENSORFLOW_USE_SYCL
+#endif  // TF_USE_SYCLDNN
 
 namespace tensorflow {
 
@@ -168,7 +168,7 @@ struct LaunchConv2DOp<SYCLDevice, T> {
                                    padding, output, data_format);
   }
 };
-#endif  // TENSORFLOW_USE_SYCL
+#endif  // TF_USE_SYCLEIGEN
 
 template <typename Device, typename T>
 class LaunchDeepConvOp {
