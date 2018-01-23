@@ -66,7 +66,8 @@ def get_device_compiler_flags(compiler_flags):
       '-sycl-compress-name',
       '-DTENSORFLOW_USE_SYCL=1',
       '-DEIGEN_USE_SYCL=1',
-      '-DEIGEN_HAS_C99_MATH',
+      '-DEIGEN_HAS_C99_MATH=1',
+      '-DEIGEN_HAS_CXX11_MATH=1',
       '-mllvm', '-inline-threshold=100000',
   ]
   return compiler_flags + computecpp_flags
