@@ -36,6 +36,9 @@ limitations under the License.
 namespace tensorflow {
 
 typedef Eigen::ThreadPoolDevice CPUDevice;
+#ifdef TENSORFLOW_USE_SYCL
+typedef Eigen::SyclDevice SYCLDevice;
+#endif  // TENSORFLOW_USE_SYCL
 
 // Variant compatible type for a list of tensors. This is mutable but instances
 // should never be mutated after stored in a variant tensor.
@@ -165,6 +168,12 @@ REGISTER_KERNEL_BUILDER(
 
 #endif  // GOOGLE_CUDA
 
+#ifdef TENSORFLOW_USE_SYCL
+REGISTER_KERNEL_BUILDER(
+    Name("EmptyTensorList").Device(DEVICE_SYCL).HostMemory("element_shape"),
+    EmptyTensorList);
+#endif  // TENSORFLOW_USE_SYCL
+
 class TensorListPushBack : public OpKernel {
  public:
   explicit TensorListPushBack(OpKernelConstruction* c) : OpKernel(c) {
@@ -222,6 +231,11 @@ REGISTER_KERNEL_BUILDER(Name("TensorListPushBack").Device(DEVICE_GPU),
 
 #endif  // GOOGLE_CUDA
 
+#ifdef TENSORFLOW_USE_SYCL
+REGISTER_KERNEL_BUILDER(Name("TensorListPushBack").Device(DEVICE_SYCL),
+                        TensorListPushBack);
+#endif  // TENSORFLOW_USE_SYCL
+
 class TensorListLength : public OpKernel {
  public:
   explicit TensorListLength(OpKernelConstruction* c) : OpKernel(c) {}
@@ -250,6 +264,12 @@ REGISTER_KERNEL_BUILDER(
     TensorListLength);
 
 #endif  // GOOGLE_CUDA
+
+#ifdef TENSORFLOW_USE_SYCL
+REGISTER_KERNEL_BUILDER(
+    Name("TensorListLength").Device(DEVICE_SYCL).HostMemory("length"),
+    TensorListLength);
+#endif  // TENSORFLOW_USE_SYCL
 
 class TensorListPopBack : public OpKernel {
  public:
@@ -298,6 +318,11 @@ REGISTER_KERNEL_BUILDER(Name("TensorListPopBack").Device(DEVICE_GPU),
                         TensorListPopBack);
 
 #endif  // GOOGLE_CUDA
+
+#ifdef TENSORFLOW_USE_SYCL
+REGISTER_KERNEL_BUILDER(Name("TensorListPopBack").Device(DEVICE_SYCL),
+                        TensorListPopBack);
+#endif  // TENSORFLOW_USE_SYCL
 
 #define REGISTER_TENSOR_LIST_STACK_CPU(T)                         \
   REGISTER_KERNEL_BUILDER(Name("TensorListStack")                 \
