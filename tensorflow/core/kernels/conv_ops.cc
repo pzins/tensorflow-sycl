@@ -50,6 +50,10 @@ limitations under the License.
 #include "tensorflow/core/platform/stream_executor.h"
 #endif  // GOOGLE_CUDA
 
+#ifdef TENSORFLOW_USE_SYCL
+#include "tensorflow/core/kernels/conv_ops_sycl.h"
+#endif  // TENSORFLOW_USE_SYCL
+
 namespace tensorflow {
 
 typedef Eigen::ThreadPoolDevice CPUDevice;
@@ -57,7 +61,7 @@ typedef Eigen::GpuDevice GPUDevice;
 
 #ifdef TENSORFLOW_USE_SYCL
 typedef Eigen::SyclDevice SYCLDevice;
-#endif // TENSORFLOW_USE_SYCL
+#endif  // TENSORFLOW_USE_SYCL
 
 namespace {
 template <typename Device, typename T>
@@ -137,33 +141,6 @@ struct LaunchConv2DOp<CPUDevice, T> {
                                   padding, output, data_format);
   }
 };
-
-#ifdef TENSORFLOW_USE_SYCL
-template <typename T>
-struct LaunchConv2DOp<SYCLDevice, T> {
-  void operator()(OpKernelContext* ctx, bool use_cudnn, bool cudnn_use_autotune,
-                  const Tensor& input, const Tensor& filter, int row_dilation,
-                  int col_dilation, int row_stride, int col_stride,
-                  const Padding& padding, Tensor* output,
-                  TensorFormat data_format) {
-    if (data_format != FORMAT_NHWC) {
-      ctx->SetStatus(
-          errors::Unimplemented("Generic conv implementation only supports "
-                                "NHWC tensor format for now."));
-      return;
-    }
-    // TODO(lukeiwanski): Add the SYCL implementation of dilated conv 2D.
-    if (row_dilation > 1 || col_dilation > 1) {
-      ctx->SetStatus(
-          errors::Unimplemented("Generic conv implementation only supports "
-                                "dilated rate of 1 for now."));
-      return;
-    }
-    LaunchGeneric<SYCLDevice, T>()(ctx, input, filter, row_stride, col_stride,
-                                  padding, output, data_format);
-  }
-};
-#endif  // TF_USE_SYCLEIGEN
 
 template <typename Device, typename T>
 class LaunchDeepConvOp {
@@ -865,9 +842,12 @@ template class LaunchConv2DOp<GPUDevice, float>;
 
 #if !defined(USE_GEMM_FOR_CONV)
 #ifdef TENSORFLOW_USE_SYCL
-REGISTER_KERNEL_BUILDER(
-    Name("Conv2D").Device(DEVICE_SYCL).TypeConstraint<float>("T"),
-    Conv2DOp<SYCLDevice, float>);
+#define REGISTER_SYCL_KERNELS(T)                                     \
+  REGISTER_KERNEL_BUILDER(                                           \
+      Name("Conv2D").Device(DEVICE_SYCL).TypeConstraint<T>("T"),     \
+      Conv2DOp<SYCLDevice, T>);
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL_KERNELS)
+#undef REGISTER_SYCL_KERNELS
 #endif  // TENSORFLOW_USE_SYCL
 #endif  // !defined(USE_GEMM_FOR_CONV)
 }  // namespace tensorflow
