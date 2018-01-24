@@ -138,6 +138,19 @@ REGISTER_GPU_KERNEL(double);
 
 #endif  // GOOGLE_CUDA
 
+#ifdef TENSORFLOW_USE_SYCL
+#define REGISTER_SYCL_KERNEL(T)                                          \
+  REGISTER_KERNEL_BUILDER(                                               \
+      Name("AdjustContrast").Device(DEVICE_SYCL).TypeConstraint<T>("T"), \
+      AdjustContrastOp<SYCLDevice, T>);
+REGISTER_SYCL_KERNEL(uint8);
+REGISTER_SYCL_KERNEL(int8);
+REGISTER_SYCL_KERNEL(int16);
+REGISTER_SYCL_KERNEL(int32);
+REGISTER_SYCL_KERNEL(float);
+REGISTER_SYCL_KERNEL(double);
+#endif  // TENSORFLOW_USE_SYCL
+
 class AdjustContrastOpV2Base : public OpKernel {
  protected:
   explicit AdjustContrastOpV2Base(OpKernelConstruction* context)
