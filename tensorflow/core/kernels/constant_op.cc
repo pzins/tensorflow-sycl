@@ -96,6 +96,7 @@ REGISTER_KERNEL(GPU, Variant);
   REGISTER_KERNEL_BUILDER(                                            \
       Name("Const").Device(DEVICE_##D).TypeConstraint<TYPE>("dtype"), \
       ConstantOp);
+REGISTER_SYCL_KERNEL(SYCL, Eigen::half);
 REGISTER_SYCL_KERNEL(SYCL, float);
 REGISTER_SYCL_KERNEL(SYCL, double);
 REGISTER_SYCL_KERNEL(SYCL, uint8);
