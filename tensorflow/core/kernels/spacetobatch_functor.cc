@@ -170,70 +170,74 @@ struct S2BKernel {
       cl::sycl::accessor<uint8_t, 1, cl::sycl::access::mode::read_write,
                          cl::sycl::access::target::global_buffer>;
 
-S2BKernel(read_write_accessor space_tensor_ptr, S2BParameters<NUM_BLOCK_DIMS> args, read_write_accessor batch_tensor_ptr,  const int64 num_indices)
- : space_tensor_ptr_(space_tensor_ptr), batch_tensor_ptr_(batch_tensor_ptr),  args_(args), num_indices_(num_indices) {}
+  S2BKernel(read_write_accessor space_tensor_ptr,
+            S2BParameters<NUM_BLOCK_DIMS> args,
+            read_write_accessor batch_tensor_ptr, const int64 num_indices)
+      : space_tensor_ptr_(space_tensor_ptr),
+        batch_tensor_ptr_(batch_tensor_ptr),
+        args_(args),
+        num_indices_(num_indices) {}
 
+  void operator()(cl::sycl::item<1> id) {
+    T* space_tensor_ptr = ConvertToActualTypeSycl(T, space_tensor_ptr_);
+    T* batch_tensor_ptr = ConvertToActualTypeSycl(T, batch_tensor_ptr_);
 
-void operator()(cl::sycl::item<1> id) {
+    for (int batch_tensor_idx = 0; batch_tensor_idx < num_indices_;
+         batch_tensor_idx++) {
+      int32 remaining_batch_tensor_idx = batch_tensor_idx;
 
-  T* space_tensor_ptr = ConvertToActualTypeSycl(T, space_tensor_ptr_);
-  T* batch_tensor_ptr = ConvertToActualTypeSycl(T, batch_tensor_ptr_);
+      int32 batch_tensor_pos[NUM_BLOCK_DIMS + 2];
 
-  for (int batch_tensor_idx = 0; batch_tensor_idx < num_indices_; batch_tensor_idx++) {
-    int32 remaining_batch_tensor_idx = batch_tensor_idx;
-
-    int32 batch_tensor_pos[NUM_BLOCK_DIMS + 2];
-
-    for (int dim = NUM_BLOCK_DIMS + 1; dim >= 1; --dim) {
-      batch_tensor_pos[dim] =
-          remaining_batch_tensor_idx % args_.batch_tensor_shape[dim];
-      remaining_batch_tensor_idx /= args_.batch_tensor_shape[dim];
-    }
-    batch_tensor_pos[0] = remaining_batch_tensor_idx;
-
-    int32 remaining_block_idx = batch_tensor_pos[0] / args_.space_tensor_batch;
-    int32 space_tensor_idx = batch_tensor_pos[NUM_BLOCK_DIMS + 1];
-    int32 space_tensor_stride = args_.batch_tensor_shape[NUM_BLOCK_DIMS + 1];
-    const int32 space_tensor_batch_pos =
-        batch_tensor_pos[0] % args_.space_tensor_batch;
-    for (int block_dim = NUM_BLOCK_DIMS - 1; block_dim >= 0; --block_dim) {
-      int32 offset = remaining_block_idx;
-      if (block_dim > 0) {
-        offset %= args_.block_shape[block_dim];
+      for (int dim = NUM_BLOCK_DIMS + 1; dim >= 1; --dim) {
+        batch_tensor_pos[dim] =
+            remaining_batch_tensor_idx % args_.batch_tensor_shape[dim];
+        remaining_batch_tensor_idx /= args_.batch_tensor_shape[dim];
       }
-      int32 space_tensor_pos =
-          batch_tensor_pos[block_dim + 1] * args_.block_shape[block_dim] +
-          offset - args_.pad_start[block_dim];
-      if (space_tensor_pos < 0 ||
-          space_tensor_pos >= args_.space_tensor_spatial_shape[block_dim]) {
-        if (B2S == false) {
-          // In the space-to-batch case, write zero padding.
-          batch_tensor_ptr[batch_tensor_idx] = static_cast<T>(0);
+      batch_tensor_pos[0] = remaining_batch_tensor_idx;
+
+      int32 remaining_block_idx =
+          batch_tensor_pos[0] / args_.space_tensor_batch;
+      int32 space_tensor_idx = batch_tensor_pos[NUM_BLOCK_DIMS + 1];
+      int32 space_tensor_stride = args_.batch_tensor_shape[NUM_BLOCK_DIMS + 1];
+      const int32 space_tensor_batch_pos =
+          batch_tensor_pos[0] % args_.space_tensor_batch;
+      for (int block_dim = NUM_BLOCK_DIMS - 1; block_dim >= 0; --block_dim) {
+        int32 offset = remaining_block_idx;
+        if (block_dim > 0) {
+          offset %= args_.block_shape[block_dim];
         }
-        break;
-      }
-      space_tensor_idx += space_tensor_stride * space_tensor_pos;
-      space_tensor_stride *= args_.space_tensor_spatial_shape[block_dim];
-      if (block_dim == 0) {
-        space_tensor_idx += space_tensor_stride * space_tensor_batch_pos;
-        if (B2S == false) {
-          batch_tensor_ptr[batch_tensor_idx] =
-              space_tensor_ptr[space_tensor_idx];
-        } else {
-          space_tensor_ptr[space_tensor_idx] =
-              batch_tensor_ptr[batch_tensor_idx];
+        int32 space_tensor_pos =
+            batch_tensor_pos[block_dim + 1] * args_.block_shape[block_dim] +
+            offset - args_.pad_start[block_dim];
+        if (space_tensor_pos < 0 ||
+            space_tensor_pos >= args_.space_tensor_spatial_shape[block_dim]) {
+          if (B2S == false) {
+            // In the space-to-batch case, write zero padding.
+            batch_tensor_ptr[batch_tensor_idx] = static_cast<T>(0);
+          }
+          break;
         }
+        space_tensor_idx += space_tensor_stride * space_tensor_pos;
+        space_tensor_stride *= args_.space_tensor_spatial_shape[block_dim];
+        if (block_dim == 0) {
+          space_tensor_idx += space_tensor_stride * space_tensor_batch_pos;
+          if (B2S == false) {
+            batch_tensor_ptr[batch_tensor_idx] =
+                space_tensor_ptr[space_tensor_idx];
+          } else {
+            space_tensor_ptr[space_tensor_idx] =
+                batch_tensor_ptr[batch_tensor_idx];
+          }
+        }
+        remaining_block_idx /= args_.block_shape[block_dim];
       }
-      remaining_block_idx /= args_.block_shape[block_dim];
     }
   }
-}
   read_write_accessor space_tensor_ptr_;
   read_write_accessor batch_tensor_ptr_;
   S2BParameters<NUM_BLOCK_DIMS> args_;
   const int64 num_indices_;
 };
-
 
 template <typename T, int NUM_BLOCK_DIMS, bool B2S>
 struct SpaceToBatchFunctor<SYCLDevice, T, NUM_BLOCK_DIMS, B2S> {
@@ -245,55 +249,57 @@ struct SpaceToBatchFunctor<SYCLDevice, T, NUM_BLOCK_DIMS, B2S> {
       const int64 block_shape[NUM_BLOCK_DIMS],
       const int64 paddings[NUM_BLOCK_DIMS * 2],
       typename TTypes<BatchT, NUM_BLOCK_DIMS + 2>::Tensor batch_tensor) {
-        // Kernel execution fails if number of elements is zero.
-        if (batch_tensor.size() == 0) {
-          return Status::OK();
-        }
-        S2BParameters<NUM_BLOCK_DIMS> args;
-        args.space_tensor_batch = space_tensor.dimension(0);
-        for (int block_dim = 0; block_dim < NUM_BLOCK_DIMS; ++block_dim) {
-          if (block_shape[block_dim] > std::numeric_limits<int32>::max()) {
-            return errors::InvalidArgument("block_shape value exceeds 2^32-1");
-          }
-          args.block_shape[block_dim] = block_shape[block_dim];
-          if (space_tensor.dimension(block_dim + 1) >
-              std::numeric_limits<int32>::max()) {
-            return errors::InvalidArgument("space_tensor dimension exceeds 2^32-1");
-          }
-          args.space_tensor_spatial_shape[block_dim] =
-              space_tensor.dimension(block_dim + 1);
-          if (paddings[block_dim * 2] > std::numeric_limits<int32>::max()) {
-            return errors::InvalidArgument("paddings/crops value exceeds 2^32-1");
-          }
-          args.pad_start[block_dim] = paddings[block_dim * 2];
-        }
-        int64 total_count = 1;
-        for (int dim = 0; dim < NUM_BLOCK_DIMS + 2; ++dim) {
-          args.batch_tensor_shape[dim] = batch_tensor.dimension(dim);
-          total_count *= args.batch_tensor_shape[dim];
-        }
-        if (total_count > std::numeric_limits<int32>::max()) {
-          return errors::InvalidArgument(
-              "number of batch_tensor elements exceeds 2^32-1");
-        }
+    // Kernel execution fails if number of elements is zero.
+    if (batch_tensor.size() == 0) {
+      return Status::OK();
+    }
+    S2BParameters<NUM_BLOCK_DIMS> args;
+    args.space_tensor_batch = space_tensor.dimension(0);
+    for (int block_dim = 0; block_dim < NUM_BLOCK_DIMS; ++block_dim) {
+      if (block_shape[block_dim] > std::numeric_limits<int32>::max()) {
+        return errors::InvalidArgument("block_shape value exceeds 2^32-1");
+      }
+      args.block_shape[block_dim] = block_shape[block_dim];
+      if (space_tensor.dimension(block_dim + 1) >
+          std::numeric_limits<int32>::max()) {
+        return errors::InvalidArgument("space_tensor dimension exceeds 2^32-1");
+      }
+      args.space_tensor_spatial_shape[block_dim] =
+          space_tensor.dimension(block_dim + 1);
+      if (paddings[block_dim * 2] > std::numeric_limits<int32>::max()) {
+        return errors::InvalidArgument("paddings/crops value exceeds 2^32-1");
+      }
+      args.pad_start[block_dim] = paddings[block_dim * 2];
+    }
+    int64 total_count = 1;
+    for (int dim = 0; dim < NUM_BLOCK_DIMS + 2; ++dim) {
+      args.batch_tensor_shape[dim] = batch_tensor.dimension(dim);
+      total_count *= args.batch_tensor_shape[dim];
+    }
+    if (total_count > std::numeric_limits<int32>::max()) {
+      return errors::InvalidArgument(
+          "number of batch_tensor elements exceeds 2^32-1");
+    }
 
-        const int num_threads = static_cast<int32>(total_count);
-        auto space_tensor_buffer = d.get_sycl_buffer(space_tensor.data());
-        auto batch_tensor_buffer = d.get_sycl_buffer(batch_tensor.data());
+    const int num_threads = static_cast<int32>(total_count);
+    auto space_tensor_buffer = d.get_sycl_buffer(space_tensor.data());
+    auto batch_tensor_buffer = d.get_sycl_buffer(batch_tensor.data());
 
-        d.sycl_queue().submit([&](cl::sycl::handler& cgh) {
-              auto space_tensor_acc =
-                  space_tensor_buffer.template get_access<cl::sycl::access::mode::read_write>(cgh);
-              auto batch_tensor_acc =
-                  batch_tensor_buffer.template get_access<cl::sycl::access::mode::read_write>(cgh);
+    d.sycl_queue().submit([&](cl::sycl::handler& cgh) {
+      auto space_tensor_acc =
+          space_tensor_buffer
+              .template get_access<cl::sycl::access::mode::read_write>(cgh);
+      auto batch_tensor_acc =
+          batch_tensor_buffer
+              .template get_access<cl::sycl::access::mode::read_write>(cgh);
 
-                  S2BKernel<T, NUM_BLOCK_DIMS, B2S> kernel(space_tensor_acc, args, batch_tensor_acc, num_threads);
+      S2BKernel<T, NUM_BLOCK_DIMS, B2S> kernel(space_tensor_acc, args,
+                                               batch_tensor_acc, num_threads);
 
+      cgh.parallel_for(cl::sycl::range<1>(num_threads), kernel);
+    });
 
-                  cgh.parallel_for(cl::sycl::range<1>(num_threads), kernel);
-          });
-
-        return Status::OK();
+    return Status::OK();
   }
 };
 #endif  // TENSORFLOW_USE_SYCL
