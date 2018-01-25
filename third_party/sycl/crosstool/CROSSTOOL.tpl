@@ -106,7 +106,7 @@ toolchain {
   compilation_mode_flags {
     mode: OPT
     compiler_flag: "-g0"
-    compiler_flag: "-O2"
+    compiler_flag: "-O3"
     compiler_flag: "-DNDEBUG"
     compiler_flag: "-ffunction-sections"
     compiler_flag: "-fdata-sections"
@@ -214,7 +214,7 @@ toolchain {
   compilation_mode_flags {
     mode: OPT
     compiler_flag: "-g0"
-    compiler_flag: "-O2"
+    compiler_flag: "-O3"
     compiler_flag: "-DNDEBUG"
     compiler_flag: "-ffunction-sections"
     compiler_flag: "-fdata-sections"
