@@ -90,7 +90,7 @@ void ConcatSYCL(
     const Eigen::SyclDevice& d,
     const std::vector<std::unique_ptr<typename TTypes<T, 2>::ConstMatrix>>&
         inputs,
-    typename TTypes<T, 2>::Matrix* output,
+    Tensor* output,
     typename TTypes<T, 2>::Matrix* output_flat) {
   if (output->NumElements() < std::numeric_limits<int32>::max()) {
     ConcatSYCLImpl<T, int32>(d, inputs, output_flat);
