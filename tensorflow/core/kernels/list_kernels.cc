@@ -524,9 +524,6 @@ REGISTER_KERNEL_BUILDER(
 REGISTER_KERNEL_BUILDER(
     Name("TensorListSetItem").Device(DEVICE_SYCL).HostMemory("index"),
     TensorListSetItem);
-
-REGISTER_KERNEL_BUILDER(Name("TensorListPopBack").Device(DEVICE_SYCL),
-                        TensorListPopBack);
 #endif  // TENSORFLOW_USE_SYCL
 
 #define REGISTER_TENSOR_LIST_STACK_CPU(T)                         \
