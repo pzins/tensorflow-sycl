@@ -41,7 +41,6 @@ void Split<Eigen::ThreadPoolDevice, T>::operator()(
 
 TF_CALL_ALL_TYPES(DEFINE_CPU_KERNELS)
 DEFINE_CPU_KERNELS(quint8)
-DEFINE_CPU_KERNELS(bfloat16)
 
 #ifdef TENSORFLOW_USE_SYCL
 template <typename T>
@@ -50,7 +49,7 @@ void Split<Eigen::SyclDevice, T>::operator()(
     typename TTypes<T, 3>::ConstTensor input,
     const Eigen::DSizes<Eigen::DenseIndex, 3>& slice_indices,
     const Eigen::DSizes<Eigen::DenseIndex, 3>& slice_sizes) {
-    output.device(d) = input.slice(slice_indices, slice_sizes);
+  output.device(d) = input.slice(slice_indices, slice_sizes);
 }
 
 #define DEFINE_SYCL_KERNELS(T) template struct Split<Eigen::SyclDevice, T>;
@@ -58,7 +57,7 @@ void Split<Eigen::SyclDevice, T>::operator()(
 TF_CALL_GPU_NUMBER_TYPES(DEFINE_SYCL_KERNELS);
 TF_CALL_complex64(DEFINE_SYCL_KERNELS);
 TF_CALL_complex128(DEFINE_SYCL_KERNELS);
-#endif // TENSORFLOW_USE_SYCL
+#endif  // TENSORFLOW_USE_SYCL
 
 }  // namespace functor
 }  // namespace tensorflow

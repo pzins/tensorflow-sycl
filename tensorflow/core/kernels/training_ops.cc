@@ -3336,7 +3336,6 @@ REGISTER_KERNELS(double, int64);
 
 #undef REGISTER_KERNELS
 
-
 template <typename Device, typename T>
 class ApplyAddSignOp : public OpKernel {
  public:
@@ -3419,17 +3418,15 @@ TF_CALL_double(REGISTER_CPU_KERNELS);
 #if GOOGLE_CUDA
 // Forward declarations of the functor specializations for GPU.
 namespace functor {
-#define DECLARE_GPU_SPEC(T)                                               \
-  template <>                                                             \
-  void ApplyAddSign<GPUDevice, T>::operator()(                            \
-      const GPUDevice& d,                                                 \
-      typename TTypes<T>::Flat var,                                       \
-      typename TTypes<T>::Flat m,                                         \
-      typename TTypes<T>::ConstScalar lr,                                 \
-      typename TTypes<T>::ConstScalar alpha,                              \
-      typename TTypes<T>::ConstScalar sign_decay,                         \
-      typename TTypes<T>::ConstScalar beta,                               \
-      typename TTypes<T>::ConstFlat grad);                                \
+#define DECLARE_GPU_SPEC(T)                                           \
+  template <>                                                         \
+  void ApplyAddSign<GPUDevice, T>::operator()(                        \
+      const GPUDevice& d, typename TTypes<T>::Flat var,               \
+      typename TTypes<T>::Flat m, typename TTypes<T>::ConstScalar lr, \
+      typename TTypes<T>::ConstScalar alpha,                          \
+      typename TTypes<T>::ConstScalar sign_decay,                     \
+      typename TTypes<T>::ConstScalar beta,                           \
+      typename TTypes<T>::ConstFlat grad);                            \
   extern template struct ApplyAddSign<GPUDevice, T>;
 DECLARE_GPU_SPEC(Eigen::half);
 DECLARE_GPU_SPEC(float);
@@ -3443,7 +3440,6 @@ REGISTER_KERNELS(GPU, double);
 #endif
 #undef REGISTER_CPU_KERNELS
 #undef REGISTER_KERNELS
-
 
 template <typename Device, typename T>
 class ApplyPowerSignOp : public OpKernel {
@@ -3527,17 +3523,15 @@ TF_CALL_double(REGISTER_CPU_KERNELS);
 #if GOOGLE_CUDA
 // Forward declarations of the functor specializations for GPU.
 namespace functor {
-#define DECLARE_GPU_SPEC(T)                                               \
-  template <>                                                             \
-  void ApplyPowerSign<GPUDevice, T>::operator()(                          \
-      const GPUDevice& d,                                                 \
-      typename TTypes<T>::Flat var,                                       \
-      typename TTypes<T>::Flat m,                                         \
-      typename TTypes<T>::ConstScalar lr,                                 \
-      typename TTypes<T>::ConstScalar logbase,                            \
-      typename TTypes<T>::ConstScalar sign_decay,                         \
-      typename TTypes<T>::ConstScalar beta,                               \
-      typename TTypes<T>::ConstFlat grad);                                \
+#define DECLARE_GPU_SPEC(T)                                           \
+  template <>                                                         \
+  void ApplyPowerSign<GPUDevice, T>::operator()(                      \
+      const GPUDevice& d, typename TTypes<T>::Flat var,               \
+      typename TTypes<T>::Flat m, typename TTypes<T>::ConstScalar lr, \
+      typename TTypes<T>::ConstScalar logbase,                        \
+      typename TTypes<T>::ConstScalar sign_decay,                     \
+      typename TTypes<T>::ConstScalar beta,                           \
+      typename TTypes<T>::ConstFlat grad);                            \
   extern template struct ApplyPowerSign<GPUDevice, T>;
 DECLARE_GPU_SPEC(Eigen::half);
 DECLARE_GPU_SPEC(float);

@@ -44,7 +44,6 @@ REGISTER_KERNEL_BUILDER(Name("AddV2")
                         BinaryOp<CPUDevice, functor::add<int32>>);
 #endif
 
-
 #if TENSORFLOW_USE_SYCL
 REGISTER2(BinaryOp, SYCL, "Add", functor::add, float, double);
 REGISTER2(BinaryOp, SYCL, "AddV2", functor::add, float, double);
@@ -63,5 +62,5 @@ REGISTER_KERNEL_BUILDER(Name("AddV2")
                             .HostMemory("z")
                             .TypeConstraint<int32>("T"),
                         BinaryOp<CPUDevice, functor::add<int32>>);
-#endif // TENSORFLOW_USE_SYCL
+#endif  // TENSORFLOW_USE_SYCL
 }  // namespace tensorflow
