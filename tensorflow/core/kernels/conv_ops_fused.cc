@@ -882,7 +882,7 @@ class FusedResizeConv2DUsingGemmOp : public OpKernel {
           .TypeConstraint<T>("T"),                                          \
       FusedResizeConv2DUsingGemmOp<                                         \
           T,                                                                \
-          FusedResizeAndPadConvFunctor<T, T, T,                             \
+          FusedResizeAndPadConvFunctor<CPUDevice, T, T, T,                  \
                                        FastGemmFunctor<CPUDevice, T, T, T>, \
                                        BILINEAR>,                           \
           true>);
@@ -894,7 +894,7 @@ TF_CALL_float(REGISTER_FUSED);
       Name("FusedPadConv2D").Device(DEVICE_CPU).TypeConstraint<T>("T"),     \
       FusedResizeConv2DUsingGemmOp<                                         \
           T,                                                                \
-          FusedResizeAndPadConvFunctor<T, T, T,                             \
+          FusedResizeAndPadConvFunctor<CPUDevice, T, T, T,                  \
                                        FastGemmFunctor<CPUDevice, T, T, T>, \
                                        NEAREST>,                            \
           false>);
