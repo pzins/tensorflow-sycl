@@ -371,7 +371,11 @@ void UnsortedSegmentSumFunctor<Device, T, Index>::operator()(
     typename TTypes<Index>::ConstFlat segment_ids,
     const Index data_size, const T* data,
     typename TTypes<T, 2>::Tensor output) {
+#ifdef TENSORFLOW_USE_SYCL
+  output.device(d) = output.constant(T(0));
+#else
   output.setZero();
+#endif  // TENSORFLOW_USE_SYCL
   if (data_size == 0) {
     return;
   }
