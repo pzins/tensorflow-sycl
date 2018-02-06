@@ -875,26 +875,28 @@ class FusedResizeConv2DUsingGemmOp : public OpKernel {
   TF_DISALLOW_COPY_AND_ASSIGN(FusedResizeConv2DUsingGemmOp);
 };
 
-#define REGISTER_FUSED(T)                                                 \
-  REGISTER_KERNEL_BUILDER(                                                \
-      Name("FusedResizeAndPadConv2D")                                     \
-          .Device(DEVICE_CPU)                                             \
-          .TypeConstraint<T>("T"),                                        \
-      FusedResizeConv2DUsingGemmOp<                                       \
-          T,                                                              \
-          FusedResizeAndPadConvFunctor<T, T, T, FastGemmFunctor<T, T, T>, \
-                                       BILINEAR>,                         \
+#define REGISTER_FUSED(T)                                                   \
+  REGISTER_KERNEL_BUILDER(                                                  \
+      Name("FusedResizeAndPadConv2D")                                       \
+          .Device(DEVICE_CPU)                                               \
+          .TypeConstraint<T>("T"),                                          \
+      FusedResizeConv2DUsingGemmOp<                                         \
+          T,                                                                \
+          FusedResizeAndPadConvFunctor<T, T, T,                             \
+                                       FastGemmFunctor<CPUDevice, T, T, T>, \
+                                       BILINEAR>,                           \
           true>);
 
 TF_CALL_float(REGISTER_FUSED);
 
-#define REGISTER_PAD_ONLY_FUSED(T)                                        \
-  REGISTER_KERNEL_BUILDER(                                                \
-      Name("FusedPadConv2D").Device(DEVICE_CPU).TypeConstraint<T>("T"),   \
-      FusedResizeConv2DUsingGemmOp<                                       \
-          T,                                                              \
-          FusedResizeAndPadConvFunctor<T, T, T, FastGemmFunctor<T, T, T>, \
-                                       NEAREST>,                          \
+#define REGISTER_PAD_ONLY_FUSED(T)                                          \
+  REGISTER_KERNEL_BUILDER(                                                  \
+      Name("FusedPadConv2D").Device(DEVICE_CPU).TypeConstraint<T>("T"),     \
+      FusedResizeConv2DUsingGemmOp<                                         \
+          T,                                                                \
+          FusedResizeAndPadConvFunctor<T, T, T,                             \
+                                       FastGemmFunctor<CPUDevice, T, T, T>, \
+                                       NEAREST>,                            \
           false>);
 
 TF_CALL_float(REGISTER_PAD_ONLY_FUSED);
