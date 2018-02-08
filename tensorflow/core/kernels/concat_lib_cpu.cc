@@ -105,7 +105,9 @@ void ConcatSYCL(
       const std::vector<std::unique_ptr<typename TTypes<T, 2>::ConstMatrix>>&, \
       Tensor* output, typename TTypes<T, 2>::Matrix* output_flat);
 
-TF_CALL_GPU_NUMBER_TYPES_NO_HALF(REGISTER_SYCL)
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL)
+TF_CALL_int64(REGISTER_SYCL);
+TF_CALL_bool(REGISTER_SYCL);
 
 #undef REGISTER_SYCL
 #endif  // TENSORFLOW_USE_SYCL

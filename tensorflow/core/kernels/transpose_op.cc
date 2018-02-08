@@ -308,9 +308,8 @@ Status ConjugateTransposeSyclOp::DoTranspose(OpKernelContext* ctx,
                               .HostMemory("perm"),    \
                           ConjugateTransposeSyclOp);
 TF_CALL_INTEGRAL_TYPES(REGISTER);
-REGISTER(float);
-REGISTER(double);
-REGISTER(bool);
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER);
+TF_CALL_bool(REGISTER);
 #undef REGISTER
-#endif
+#endif  // TENSORFLOW_USE_SYCL
 }  // namespace tensorflow

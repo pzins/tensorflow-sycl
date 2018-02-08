@@ -737,12 +737,11 @@ void FillPhiloxRandom<SYCLDevice, Distribution>::operator()(
                               .HostMemory("shape")              \
                               .HostMemory("minval")             \
                               .HostMemory("maxval")             \
-                              .TypeConstraint<int32>("T")        \
+                              .TypeConstraint<int32>("T")       \
                               .TypeConstraint<IntType>("Tout"), \
                           RandomUniformIntOp<SYCLDevice, IntType>);
 
-TF_CALL_float(REGISTER);
-TF_CALL_double(REGISTER);
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER);
 TF_CALL_int32(REGISTER_INT);
 TF_CALL_int64(REGISTER_INT);
 
