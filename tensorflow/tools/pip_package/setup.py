@@ -29,7 +29,7 @@ from setuptools.dist import Distribution
 # This version string is semver compatible, but incompatible with pip.
 # For pip, we will remove all '-' characters from this string, and use the
 # result for pip.
-_VERSION = '1.5.0'
+_VERSION = '1.6.0-rc0'
 
 REQUIRED_PACKAGES = [
     'absl-py >= 0.1.6',
@@ -181,9 +181,10 @@ def find_files(pattern, root):
 
 matches = ['../' + x for x in find_files('*', 'external') if '.py' not in x]
 
-so_lib_paths = [i for i in os.listdir('.')
-                if os.path.isdir(i) 
-                and fnmatch.fnmatch(i, '_solib_*')]
+so_lib_paths = [
+    i for i in os.listdir('.')
+    if os.path.isdir(i) and fnmatch.fnmatch(i, '_solib_*')
+]
 
 for path in so_lib_paths:
   matches.extend(
