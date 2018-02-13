@@ -364,20 +364,16 @@ TF_CALL_GPU_NUMBER_TYPES(REGISTER_GPU_SORTED_KERNELS_ALL);
 
 namespace functor {
 
-// The ReductionFunctor implementation for CPU and SYCL.
-template <typename Device, typename T, typename Index, typename InitialValueF,
+// The ReductionFunctor implementation for CPU.
+template <typename T, typename Index, typename InitialValueF,
           typename ReductionF>
-struct UnsortedSegmentFunctor {
+struct UnsortedSegmentFunctor<CPUDevice, T, Index, InitialValueF, ReductionF> {
   void operator()(OpKernelContext* ctx, const Index num_segments,
                   const TensorShape& segment_ids_shape,
                   typename TTypes<Index>::ConstFlat segment_ids,
                   const Index data_size, const T* data,
                   typename TTypes<T, 2>::Tensor output) {
-#ifdef TENSORFLOW_USE_SYCL
-    output.device(d) = output.constant(T(InitialValueF()());
-#else
     output.setConstant(InitialValueF()());
-#endif  // TENSORFLOW_USE_SYCL
     if (data_size == 0) {
       return;
     }
@@ -433,6 +429,69 @@ struct ProdOp {
     output *= data;
   }
 };
+
+#ifdef TENSORFLOW_USE_SYCL
+// reduction functors
+template <typename T>
+struct SumOpSycl {
+  void operator()(const SYCLDevice& d, const constMatrixChip<T> data, MatrixChip<T> output) {
+    output.device(d) += data;
+  }
+};
+
+template <typename T>
+struct MaxOpSycl {
+  void operator()(const SYCLDevice& d, const constMatrixChip<T> data, MatrixChip<T> output) {
+    output.device(d) = data.cwiseMax(output);
+  }
+};
+
+template <typename T>
+struct MinOpSycl {
+  void operator()(const SYCLDevice& d, const constMatrixChip<T> data, MatrixChip<T> output) {
+    output.device(d) = data.cwiseMin(output);
+  }
+};
+
+template <typename T>
+struct ProdOpSycl {
+  void operator()(const SYCLDevice& d, const constMatrixChip<T> data, MatrixChip<T> output) {
+    output.device(d) = output * data;
+  }
+};
+
+template <typename T, typename Index, typename InitialValueF,
+          typename ReductionF>
+struct UnsortedSegmentFunctor<SYCLDevice, T, Index, InitialValueF, ReductionF> {
+  void operator()(OpKernelContext* ctx, const Index num_segments,
+                  const TensorShape& segment_ids_shape,
+                  typename TTypes<Index>::ConstFlat segment_ids,
+                  const Index data_size, const T* data,
+                  typename TTypes<T, 2>::Tensor output) {
+    SYCLDevice d = ctx->eigen_device<SYCLDevice>();
+    output.device(d) = output.constant(T(InitialValueF()()));
+    if (data_size == 0) {
+      return;
+    }
+    const int64 N = segment_ids.dimension(0);
+    ReductionF reduction;
+    auto data_flat = typename TTypes<T, 2>::ConstTensor(data, N, data_size / N);
+    for (int64 i = 0; i < N; ++i) {
+      Index j = internal::SubtleMustCopy(segment_ids(i));
+      if (j < 0) {
+        continue;
+      }
+      OP_REQUIRES(ctx, FastBoundsCheck(j, num_segments),
+                  errors::InvalidArgument(
+                      "segment_ids", SliceDebugString(segment_ids_shape, i),
+                      " = ", j, " is out of range [0, ", num_segments, ")"));
+      reduction(d, data_flat.template chip<0>(i), output.template chip<0>(j));
+    }
+  }
+};
+#endif  // TENSORFLOW_USE_SYCL
+
+
 }  // namespace functor
 
 // Static check routines not in the templated class to reduce code size
@@ -631,18 +690,18 @@ TF_CALL_complex128(REGISTER_SUM_GPU_UNSORTED_KERNELS_ALL);
 #define REGISTER_REAL_SYCL_UNSORTED_KERNELS(type, index_type)                  \
   REGISTER_SYCL_KERNEL_UNSORTEDSEGMENT("UnsortedSegmentMax", type, index_type, \
                                       functor::Lowest<type>,                   \
-                                      functor::MaxOp<type>);                   \
+                                      functor::MaxOpSycl<type>);                   \
   REGISTER_SYCL_KERNEL_UNSORTEDSEGMENT("UnsortedSegmentMin", type, index_type, \
                                       functor::Highest<type>,                  \
-                                      functor::MinOp<type>);                   \
+                                      functor::MinOpSycl<type>);                   \
   REGISTER_SYCL_KERNEL_UNSORTEDSEGMENT("UnsortedSegmentProd", type, index_type,\
                                       functor::One<type>,                      \
-                                      functor::ProdOp<type>);
+                                      functor::ProdOpSycl<type>);
 
 #define REGISTER_SUM_SYCL_UNSORTED_KERNELS(type, index_type)                  \
-  REGISTER_GPU_KERNEL_UNSORTEDSEGMENT("UnsortedSegmentSum", type, index_type, \
+  REGISTER_SYCL_KERNEL_UNSORTEDSEGMENT("UnsortedSegmentSum", type, index_type,\
                                       functor::Zero<type>,                    \
-                                      functor::SumOp<type>);
+                                      functor::SumOpSycl<type>);
 
 #define REGISTER_REAL_SYCL_UNSORTED_KERNELS_ALL(type) \
   REGISTER_REAL_SYCL_UNSORTED_KERNELS(type, int32);   \
