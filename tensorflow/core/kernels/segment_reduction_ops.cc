@@ -678,6 +678,7 @@ TF_CALL_complex128(REGISTER_SUM_GPU_UNSORTED_KERNELS_ALL);
       Name(name)                                                             \
           .Device(DEVICE_SYCL)                                               \
           .HostMemory("num_segments")                                        \
+          .HostMemory("segment_ids")                                         \
           .TypeConstraint<type>("T")                                         \
           .TypeConstraint<index_type>("Tindices"),                           \
       UnsortedSegmentReductionOp<                                            \
