@@ -434,28 +434,32 @@ struct ProdOp {
 // reduction functors
 template <typename T>
 struct SumOpSycl {
-  void operator()(const SYCLDevice& d, const constMatrixChip<T> data, MatrixChip<T> output) {
+  void operator()(const SYCLDevice& d, const constMatrixChip<T> data,
+                  MatrixChip<T> output) {
     output.device(d) += data;
   }
 };
 
 template <typename T>
 struct MaxOpSycl {
-  void operator()(const SYCLDevice& d, const constMatrixChip<T> data, MatrixChip<T> output) {
+  void operator()(const SYCLDevice& d, const constMatrixChip<T> data,
+                  MatrixChip<T> output) {
     output.device(d) = data.cwiseMax(output);
   }
 };
 
 template <typename T>
 struct MinOpSycl {
-  void operator()(const SYCLDevice& d, const constMatrixChip<T> data, MatrixChip<T> output) {
+  void operator()(const SYCLDevice& d, const constMatrixChip<T> data,
+                  MatrixChip<T> output) {
     output.device(d) = data.cwiseMin(output);
   }
 };
 
 template <typename T>
 struct ProdOpSycl {
-  void operator()(const SYCLDevice& d, const constMatrixChip<T> data, MatrixChip<T> output) {
+  void operator()(const SYCLDevice& d, const constMatrixChip<T> data,
+                  MatrixChip<T> output) {
     output.device(d) = output * data;
   }
 };
@@ -691,10 +695,10 @@ TF_CALL_complex128(REGISTER_SUM_GPU_UNSORTED_KERNELS_ALL);
 #define REGISTER_REAL_SYCL_UNSORTED_KERNELS(type, index_type)                  \
   REGISTER_SYCL_KERNEL_UNSORTEDSEGMENT("UnsortedSegmentMax", type, index_type, \
                                       functor::Lowest<type>,                   \
-                                      functor::MaxOpSycl<type>);                   \
+                                      functor::MaxOpSycl<type>);               \
   REGISTER_SYCL_KERNEL_UNSORTEDSEGMENT("UnsortedSegmentMin", type, index_type, \
                                       functor::Highest<type>,                  \
-                                      functor::MinOpSycl<type>);                   \
+                                      functor::MinOpSycl<type>);               \
   REGISTER_SYCL_KERNEL_UNSORTEDSEGMENT("UnsortedSegmentProd", type, index_type,\
                                       functor::One<type>,                      \
                                       functor::ProdOpSycl<type>);
