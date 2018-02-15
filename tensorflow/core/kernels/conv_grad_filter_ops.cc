@@ -116,10 +116,9 @@ struct LaunchConv2DBackpropFilterOp<SYCLDevice, T> {
                   int row_stride, int col_stride, const Padding& padding,
                   Tensor* filter_backprop, TensorFormat data_format) {
     const SYCLDevice& d = ctx->eigen_device<SYCLDevice>();
-    functor::SpatialConvolutionBackwardKernel<SYCLDevice, T>()(
+    functor::SpatialConvolutionBackwardFilter<SYCLDevice, T>()(
         d, filter_backprop->tensor<T, 4>(), input.tensor<T, 4>(),
-        out_backprop.tensor<T, 4>(), filter_backprop->dim_size(0),
-        filter_backprop->dim_size(1), row_stride, col_stride);
+        out_backprop.tensor<T, 4>(), row_stride, col_stride);
   }
 };
 #endif  // TF_USE_SYCLEIGEN

@@ -123,8 +123,7 @@ struct LaunchConv2DBackpropInputOp<SYCLDevice, T> {
     const SYCLDevice& d = ctx->eigen_device<SYCLDevice>();
     functor::SpatialConvolutionBackwardInput<SYCLDevice, T>()(
         d, in_backprop->tensor<T, 4>(), filter.tensor<T, 4>(),
-        out_backprop.tensor<T, 4>(), in_backprop->dim_size(1),
-        in_backprop->dim_size(2), row_stride, col_stride);
+        out_backprop.tensor<T, 4>(), row_stride, col_stride);
   }
 };
 #endif  // TF_USE_SYCLDNN
