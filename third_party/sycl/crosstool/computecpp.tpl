@@ -67,6 +67,7 @@ def get_device_compiler_flags(compiler_flags):
       '-DEIGEN_USE_SYCL=1',
       '-DEIGEN_HAS_C99_MATH=1',
       '-DEIGEN_HAS_CXX11_MATH=1',
+      '-DDISABLE_SKINNY=1',
   ]
   return compiler_flags + computecpp_flags
 
