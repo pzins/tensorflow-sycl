@@ -120,11 +120,11 @@ def tf_workspace(path_prefix="", tf_repo_name=""):
   tf_http_archive(
       name = "eigen_archive",
       urls = [
-          "http://mirror.bazel.build/bitbucket.org/mehdi_goli/opencl/get/713dccf5d6ec.tar.gz",
-          "https://bitbucket.org/mehdi_goli/opencl/get/713dccf5d6ec.tar.gz",
+          "http://mirror.bazel.build/bitbucket.org/mehdi_goli/opencl/get/890b2768b800.tar.gz",
+          "https://bitbucket.org/mehdi_goli/opencl/get/890b2768b800.tar.gz",
       ],
-      sha256 = "00b351c6bd88a39f5edb81d0d7a046dcff42653adcba0a7e1f16dd606cb3809e",
-      strip_prefix = "mehdi_goli-opencl-713dccf5d6ec",
+      sha256 = "8f0d787a625a90d4ca9486bc6e86d0fde3e57d6ecbe76bed5a7bcc23e0adb847",
+      strip_prefix = "mehdi_goli-opencl-890b2768b800",
       build_file = str(Label("//third_party:eigen.BUILD")),
   )
 
