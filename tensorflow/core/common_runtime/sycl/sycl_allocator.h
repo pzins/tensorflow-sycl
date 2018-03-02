@@ -20,10 +20,10 @@ limitations under the License.
 #ifndef TENSORFLOW_COMMON_RUNTIME_SYCL_SYCL_ALLOCATOR_H_
 #define TENSORFLOW_COMMON_RUNTIME_SYCL_SYCL_ALLOCATOR_H_
 
+#include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #include "tensorflow/core/framework/allocator.h"
 #include "tensorflow/core/platform/mutex.h"
 #include "tensorflow/core/platform/types.h"
-#include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 
 namespace tensorflow {
 
@@ -51,19 +51,18 @@ class SYCLAllocator : public Allocator {
   // Get the size of the corresponding SYCL buffer.
   // Implementing this also provides an implementation of
   // AllocatedSize(void* ptr) by default.
-  size_t RequestedSize(void* ptr) override;
+  size_t RequestedSize(const void* ptr) override;
   Eigen::SyclDevice* getSyclDevice() { return sycl_device_; }
   // Clear the SYCL device used by the Allocator
   void ClearSYCLDevice() {
     mutex_lock lock(mu_);
-    if(sycl_device_) {
+    if (sycl_device_) {
       delete sycl_device_;
       sycl_device_ = nullptr;
     }
   }
 
  private:
-
   mutable mutex mu_;
   Eigen::SyclDevice* sycl_device_ GUARDED_BY(mu_);  // owned
   AllocatorStats stats_ GUARDED_BY(mu_);

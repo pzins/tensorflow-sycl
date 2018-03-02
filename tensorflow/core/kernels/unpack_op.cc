@@ -34,7 +34,7 @@ typedef Eigen::GpuDevice GPUDevice;
 
 #ifdef TENSORFLOW_USE_SYCL
 typedef Eigen::SyclDevice SYCLDevice;
-#endif // TENSORFLOW_USE_SYCL
+#endif  // TENSORFLOW_USE_SYCL
 
 template <typename Device, typename T>
 class UnpackOp : public OpKernel {
@@ -65,8 +65,9 @@ class UnpackOp : public OpKernel {
     output_shape.RemoveDim(axis);
     const int64 output_size = output_shape.num_elements();
     OP_REQUIRES(
-        context, FastBoundsCheck(output_size,
-                                 std::numeric_limits<Eigen::DenseIndex>::max()),
+        context,
+        FastBoundsCheck(output_size,
+                        std::numeric_limits<Eigen::DenseIndex>::max()),
         errors::InvalidArgument("output size must fit in Eigen DenseIndex"));
 
 // This optimization is currently not applicable for SYCL devices
@@ -169,7 +170,7 @@ REGISTER_KERNEL_BUILDER(Name("Unpack")
       Name("Unpack").Device(DEVICE_SYCL).TypeConstraint<type>("T"), \
       UnpackOp<SYCLDevice, type>)
 
-TF_CALL_GPU_NUMBER_TYPES_NO_HALF(REGISTER_SYCL);
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL);
 
 REGISTER_KERNEL_BUILDER(Name("Unpack")
                             .Device(DEVICE_SYCL)

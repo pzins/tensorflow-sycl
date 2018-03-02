@@ -139,11 +139,11 @@ REGISTER_KERNEL_BUILDER(
     Name("ReadVariableOp").Device(DEVICE_SYCL).HostMemory("resource"),
     ReadVariableOp);
 
-#define REGISTER_SYCL_KERNELS(type)                            \
-  REGISTER_KERNEL_BUILDER(Name("VarHandleOp")                  \
-                              .Device(DEVICE_SYCL)             \
-                              .HostMemory("resource")          \
-                              .TypeConstraint<type>("dtype"),  \
+#define REGISTER_SYCL_KERNELS(type)                           \
+  REGISTER_KERNEL_BUILDER(Name("VarHandleOp")                 \
+                              .Device(DEVICE_SYCL)            \
+                              .HostMemory("resource")         \
+                              .TypeConstraint<type>("dtype"), \
                           ResourceHandleOp<Var>)
 
 TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL_KERNELS);
@@ -418,7 +418,6 @@ class AssignVariableOp<Device, Variant> : public OpKernel {
 
 TF_CALL_ALL_TYPES(REGISTER_KERNELS);
 TF_CALL_QUANTIZED_TYPES(REGISTER_KERNELS);
-TF_CALL_variant(REGISTER_KERNELS);
 #undef REGISTER_KERNELS
 
 #if GOOGLE_CUDA
@@ -504,16 +503,16 @@ TF_CALL_GPU_NUMBER_TYPES(REGISTER_GPU_KERNELS);
 #endif  // GOOGLE_CUDA
 
 #ifdef TENSORFLOW_USE_SYCL
-#define REGISTER_SYCL_KERNELS(type)                                      \
-  REGISTER_KERNEL_BUILDER(Name("AssignAddVariableOp")                    \
-                              .Device(DEVICE_SYCL)                       \
-                              .HostMemory("resource")                    \
-                              .TypeConstraint<type>("dtype"),            \
-                          AssignUpdateVariableOp<SYCLDevice, type, ADD>);\
-  REGISTER_KERNEL_BUILDER(Name("AssignSubVariableOp")                    \
-                              .Device(DEVICE_SYCL)                       \
-                              .HostMemory("resource")                    \
-                              .TypeConstraint<type>("dtype"),            \
+#define REGISTER_SYCL_KERNELS(type)                                       \
+  REGISTER_KERNEL_BUILDER(Name("AssignAddVariableOp")                     \
+                              .Device(DEVICE_SYCL)                        \
+                              .HostMemory("resource")                     \
+                              .TypeConstraint<type>("dtype"),             \
+                          AssignUpdateVariableOp<SYCLDevice, type, ADD>); \
+  REGISTER_KERNEL_BUILDER(Name("AssignSubVariableOp")                     \
+                              .Device(DEVICE_SYCL)                        \
+                              .HostMemory("resource")                     \
+                              .TypeConstraint<type>("dtype"),             \
                           AssignUpdateVariableOp<SYCLDevice, type, SUB>);
 
 TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL_KERNELS);
@@ -721,6 +720,9 @@ class ResourceScatterUpdateOp : public OpKernel {
   REGISTER_SCATTER_ARITHEMTIC(type, CPU);
 
 TF_CALL_NUMBER_TYPES(REGISTER_SCATTER_ARITHEMTIC_CPU);
+
+REGISTER_SCATTER_KERNEL(string, CPU, "ResourceScatterUpdate",
+                        scatter_op::UpdateOp::ASSIGN);
 
 // Registers GPU kernels.
 #if GOOGLE_CUDA

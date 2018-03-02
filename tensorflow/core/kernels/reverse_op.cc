@@ -269,10 +269,10 @@ class ReverseV2Op : public OpKernel {
       OP_REQUIRES_OK(context,
                      context->allocate_output(0, input.shape(), &output));
 
-// TODO(cwhipkey): we can do dimension folding to reduce, e.g., a reverse of
-// a single dimension to the dims=3 or dims=2 case, regardless of the number
-// of dimensions in the tensor. This would let some ops use faster
-// lower-dimension code (and use optimized versions).
+      // TODO(cwhipkey): we can do dimension folding to reduce, e.g., a reverse
+      // of a single dimension to the dims=3 or dims=2 case, regardless of the
+      // number of dimensions in the tensor. This would let some ops use faster
+      // lower-dimension code (and use optimized versions).
 
 #define HANDLE_REVERSE(NDIMS)                                           \
   case NDIMS:                                                           \
@@ -431,8 +431,7 @@ REGISTER_KERNEL_BUILDER(Name("ReverseV2")
                           ReverseV2Op<SYCLDevice, T, int64>)
 TF_CALL_uint8(REGISTER_SYCL_KERNELS);
 TF_CALL_int8(REGISTER_SYCL_KERNELS);
-TF_CALL_float(REGISTER_SYCL_KERNELS);
-TF_CALL_double(REGISTER_SYCL_KERNELS);
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL_KERNELS);
 
 REGISTER_KERNEL_BUILDER(Name("Reverse")
                             .Device(DEVICE_SYCL)

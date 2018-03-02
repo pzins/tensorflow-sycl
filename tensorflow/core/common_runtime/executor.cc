@@ -172,17 +172,11 @@ void SetMemory(NodeExecStatsWrapper* stats, OpKernelContext* ctx) {
     stats->AddAllocation(allocator_pair.first, allocator_pair.second);
   }
   auto* ms = stats->stats()->mutable_memory_stats();
-  ms->set_host_temp_memory_size(ctx->host_temp_memory_size());
-  ms->set_device_temp_memory_size(ctx->device_temp_memory_size());
-  for (const auto& alloc_id : ctx->host_persistent_alloc_ids()) {
-    ms->mutable_host_persistent_tensor_alloc_ids()->Add(alloc_id);
+  ms->set_temp_memory_size(ctx->temp_memory_allocated());
+  for (const auto& alloc_id : ctx->persistent_alloc_ids()) {
+    ms->mutable_persistent_tensor_alloc_ids()->Add(alloc_id);
   }
-  for (const auto& alloc_id : ctx->device_persistent_alloc_ids()) {
-    ms->mutable_device_persistent_tensor_alloc_ids()->Add(alloc_id);
-  }
-  ms->set_host_persistent_memory_size(ctx->host_persistent_memory_allocated());
-  ms->set_device_persistent_memory_size(
-      ctx->device_persistent_memory_allocated());
+  ms->set_persistent_memory_size(ctx->persistent_memory_allocated());
 }
 
 void SetReferencedTensors(NodeExecStatsWrapper* stats,
@@ -475,6 +469,7 @@ size_t GraphView::NodeItemBytes(const Node* n) {
       + num_inputs * sizeof(uint8)                 // input_type[num_inputs]
       + num_outputs * sizeof(uint8);               // output_type[num_outputs]
   static constexpr size_t kItemAlignment = sizeof(NodeItem*);
+#if !(defined(TENSORFLOW_USE_SYCL) && defined(__SYCL_DEVICE_ONLY__))
   static_assert(kItemAlignment % alignof(NodeItem) == 0,
                 "NodeItem must be aligned with kItemAlignment");
   static_assert(kItemAlignment % alignof(EdgeInfo) == 0,
@@ -487,6 +482,7 @@ size_t GraphView::NodeItemBytes(const Node* n) {
                 "NodeItem must be aligned with AllocatorAttributes");
   static_assert(sizeof(EdgeInfo) % alignof(AllocatorAttributes) == 0,
                 "EdgeInfo must be aligned with AllocatorAttributes");
+#endif
   const size_t bytes =
       ((raw_bytes + kItemAlignment - 1) / kItemAlignment) * kItemAlignment;
   return bytes;
@@ -1615,7 +1611,7 @@ void ExecutorState::Process(TaggedNode tagged_node, int64 scheduled_usec) {
         auto done = [this, state]() {
           Device* device = impl_->params_.device;
           NodeExecStatsWrapper* stats = state->stats;  // Shorthand
-          Entry* first_input = state->first_input;  // Shorthand
+          Entry* first_input = state->first_input;     // Shorthand
 
           nodestats::SetOpEnd(stats);
           EntryVector outputs;
@@ -1782,6 +1778,19 @@ Status ExecutorState::PrepareInputs(const NodeItem& item, Entry* first_input,
         entry->ref_mu = nullptr;
 
         inp->tensor = entry->val.get();
+        // The dtype of entry->ref could have been changed by another operation
+        // that ran after the operation that "produced" it executed, so
+        // re-validate that the type of the dereferenced tensor matches the
+        // expected input type.
+        if (item.input_type(i) != inp->tensor->dtype()) {
+          return AttachDef(
+              errors::InvalidArgument(
+                  i, "-th input expects type ",
+                  DataTypeString(item.input_type(i)),
+                  " but automatically dereferenced input tensor has type ",
+                  DataTypeString(inp->tensor->dtype())),
+              item.kernel->def());
+        }
       }
     }
   }

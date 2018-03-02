@@ -40,8 +40,8 @@ typedef Eigen::SyclDevice SYCLDevice;
 template <typename Device, typename T>
 class AdjustContrastOp : public OpKernel {
  public:
-  explicit AdjustContrastOp(OpKernelConstruction* context) : OpKernel(context) {
-  }
+  explicit AdjustContrastOp(OpKernelConstruction* context)
+      : OpKernel(context) {}
 
   void Compute(OpKernelContext* context) override {
     const Tensor& input = context->input(0);
@@ -137,6 +137,18 @@ REGISTER_GPU_KERNEL(double);
 #undef REGISTER_GPU_KERNEL
 
 #endif  // GOOGLE_CUDA
+
+#ifdef TENSORFLOW_USE_SYCL
+#define REGISTER_SYCL_KERNEL(T)                                          \
+  REGISTER_KERNEL_BUILDER(                                               \
+      Name("AdjustContrast").Device(DEVICE_SYCL).TypeConstraint<T>("T"), \
+      AdjustContrastOp<SYCLDevice, T>);
+REGISTER_SYCL_KERNEL(uint8);
+REGISTER_SYCL_KERNEL(int8);
+REGISTER_SYCL_KERNEL(int16);
+REGISTER_SYCL_KERNEL(int32);
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL_KERNEL);
+#endif  // TENSORFLOW_USE_SYCL
 
 class AdjustContrastOpV2Base : public OpKernel {
  protected:

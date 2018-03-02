@@ -92,11 +92,16 @@ class RetvalOp : public OpKernel {
 REGISTER_SYSTEM_KERNEL_BUILDER(Name("_Arg").Device(DEVICE_CPU), ArgOp);
 REGISTER_SYSTEM_KERNEL_BUILDER(Name("_Retval").Device(DEVICE_CPU), RetvalOp);
 
-#if TENSORFLOW_USE_SYCL
+#ifdef TENSORFLOW_USE_SYCL
 #define REGISTER(type)     \
   REGISTER_KERNEL_BUILDER( \
       Name("_Arg").Device(DEVICE_SYCL).TypeConstraint<type>("T"), ArgOp);
-TF_CALL_NUMBER_TYPES_NO_INT32(REGISTER)
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER);
+TF_CALL_int64(REGISTER);
+TF_CALL_uint16(REGISTER);
+TF_CALL_int16(REGISTER);
+TF_CALL_uint8(REGISTER);
+TF_CALL_int8(REGISTER);
 TF_CALL_bool(REGISTER) REGISTER_KERNEL_BUILDER(Name("_Arg")
                                                    .Device(DEVICE_SYCL)
                                                    .HostMemory("output")
@@ -107,7 +112,12 @@ TF_CALL_bool(REGISTER) REGISTER_KERNEL_BUILDER(Name("_Arg")
   REGISTER_KERNEL_BUILDER(                                           \
       Name("_Retval").Device(DEVICE_SYCL).TypeConstraint<type>("T"), \
       RetvalOp);
-TF_CALL_NUMBER_TYPES_NO_INT32(REGISTER)
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER);
+TF_CALL_int64(REGISTER);
+TF_CALL_uint16(REGISTER);
+TF_CALL_int16(REGISTER);
+TF_CALL_uint8(REGISTER);
+TF_CALL_int8(REGISTER);
 TF_CALL_bool(REGISTER) REGISTER_KERNEL_BUILDER(Name("_Retval")
                                                    .Device(DEVICE_SYCL)
                                                    .HostMemory("input")
@@ -205,8 +215,7 @@ REGISTER_KERNEL_BUILDER(Name("_ArrayToList")
       Name("_ArrayToList").Device(DEVICE_SYCL).TypeConstraint<type>("T"), \
       PassOn);
 
-REGISTER_SYCL_KERNELS(float);
-REGISTER_SYCL_KERNELS(double);
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL_KERNELS);
 
 #undef REGISTER_SYCL_KERNELS
 
@@ -253,22 +262,21 @@ class SymbolicGradientOp : public AsyncOpKernel {
       args.push_back(ctx->input(i));
     }
     std::vector<Tensor>* rets = new std::vector<Tensor>;
-    lib->Run(
-        opts, handle, args, rets, [ctx, done, rets](const Status& status) {
-          if (!status.ok()) {
-            ctx->SetStatus(status);
-          } else if (rets->size() != ctx->num_outputs()) {
-            ctx->SetStatus(errors::InvalidArgument(
-                "SymGrad expects to return ", ctx->num_outputs(),
-                " tensor(s), but get ", rets->size(), " tensor(s) instead."));
-          } else {
-            for (size_t i = 0; i < rets->size(); ++i) {
-              ctx->set_output(i, (*rets)[i]);
-            }
-          }
-          delete rets;
-          done();
-        });
+    lib->Run(opts, handle, args, rets, [ctx, done, rets](const Status& status) {
+      if (!status.ok()) {
+        ctx->SetStatus(status);
+      } else if (rets->size() != ctx->num_outputs()) {
+        ctx->SetStatus(errors::InvalidArgument(
+            "SymGrad expects to return ", ctx->num_outputs(),
+            " tensor(s), but get ", rets->size(), " tensor(s) instead."));
+      } else {
+        for (size_t i = 0; i < rets->size(); ++i) {
+          ctx->set_output(i, (*rets)[i]);
+        }
+      }
+      delete rets;
+      done();
+    });
   }
 
  private:

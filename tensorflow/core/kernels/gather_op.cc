@@ -18,6 +18,8 @@ limitations under the License.
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/register_types.h"
 #include "tensorflow/core/framework/tensor.h"
+#include "tensorflow/core/framework/variant.h"
+#include "tensorflow/core/framework/variant_encode_decode.h"
 #include "tensorflow/core/kernels/bounds_check.h"
 #include "tensorflow/core/kernels/gather_functor.h"
 #include "tensorflow/core/platform/mem.h"
@@ -109,8 +111,7 @@ class GatherOp : public OpKernel {
       auto out_flat = out->shaped<T, 3>({outer_size, N, inner_size});
 
       functor::GatherFunctor<Device, T, Index> functor;
-      int64 bad_i = functor(c, params_flat,
-                            indices_flat, out_flat);
+      int64 bad_i = functor(c, params_flat, indices_flat, out_flat);
 
       OP_REQUIRES(
           c, bad_i < 0,
@@ -184,7 +185,7 @@ TF_CALL_complex128(REGISTER_GATHER_GPU);
   REGISTER_GATHER_FULL_SYCL(dev, type, int64)
 #define REGISTER_GATHER_SYCL(type) REGISTER_GATHER_ALL_INDICES_SYCL(SYCL, type)
 
-TF_CALL_GPU_NUMBER_TYPES_NO_HALF(REGISTER_GATHER_SYCL);
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_GATHER_SYCL);
 #undef REGISTER_GATHER_SYCL
 #undef REGISTER_GATHER_ALL_INDICES_SYCL
 #undef REGISTER_GATHER_FULL_SYCL

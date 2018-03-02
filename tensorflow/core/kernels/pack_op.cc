@@ -36,7 +36,7 @@ typedef Eigen::GpuDevice GPUDevice;
 #endif  // GOOGLE_CUDA
 #ifdef TENSORFLOW_USE_SYCL
 typedef Eigen::SyclDevice SYCLDevice;
-#endif // TENSORFLOW_USE_SYCL
+#endif  // TENSORFLOW_USE_SYCL
 
 // --------------------------------------------------------------------------
 template <typename Device, typename T>
@@ -120,10 +120,11 @@ class PackOp : public OpKernel {
 #endif  // GOOGLE_CUDA
 #ifdef TENSORFLOW_USE_SYCL
       if (std::is_same<Device, SYCLDevice>::value) {
-        ConcatSYCL<T>(c->eigen_sycl_device(), inputs_flat, output, &output_flat);
+        ConcatSYCL<T>(c->eigen_sycl_device(), inputs_flat, output,
+                      &output_flat);
         return;
       }
-#endif // TENSORFLOW_USE_SYCL
+#endif  // TENSORFLOW_USE_SYCL
       ConcatCPU<T>(c->device(), inputs_flat, &output_flat);
     }
   }
@@ -139,8 +140,6 @@ class PackOp : public OpKernel {
 
 TF_CALL_ALL_TYPES(REGISTER_PACK);
 TF_CALL_QUANTIZED_TYPES(REGISTER_PACK);
-TF_CALL_bfloat16(REGISTER_PACK);
-TF_CALL_variant(REGISTER_PACK);
 
 #if defined(IS_MOBILE_PLATFORM) && !defined(SUPPORT_SELECTIVE_REGISTRATION)
 // Primarily used for SavedModel support on mobile.
@@ -181,7 +180,9 @@ REGISTER_KERNEL_BUILDER(Name("Pack")
       Name("Pack").Device(DEVICE_SYCL).TypeConstraint<type>("T"), \
       PackOp<SYCLDevice, type>)
 
-TF_CALL_GPU_NUMBER_TYPES_NO_HALF(REGISTER_SYCL);
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL);
+TF_CALL_int64(REGISTER_SYCL);
+TF_CALL_bool(REGISTER_SYCL);
 REGISTER_KERNEL_BUILDER(Name("Pack")
                             .Device(DEVICE_SYCL)
                             .HostMemory("values")

@@ -51,7 +51,7 @@ limitations under the License.
 #include "tensorflow/core/platform/stream_executor.h"
 #endif  // GOOGLE_CUDA
 
-#ifdef TF_USE_SYCLDNN
+#if defined(TF_USE_SYCLDNN) && defined(TENSORFLOW_USE_SYCL)
 #include "tensorflow/core/kernels/conv_ops_sycl.h"
 #endif  // TF_USE_SYCLDNN
 
@@ -721,7 +721,7 @@ void LaunchConv2DOp<GPUDevice, T>::operator()(
   static int64 ConvolveScratchSize = GetCudnnWorkspaceLimit(
       // default value is in bytes despite the name of the environment variable
       "TF_CUDNN_WORKSPACE_LIMIT_IN_MB", 1LL << 32  // 4GB
-      );
+  );
 
   int device_id = stream->parent()->device_ordinal();
   DataType dtype = input.dtype();

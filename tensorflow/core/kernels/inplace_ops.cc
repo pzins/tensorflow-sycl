@@ -27,13 +27,13 @@ namespace tensorflow {
 typedef Eigen::ThreadPoolDevice CPUDevice;
 #ifdef TENSORFLOW_USE_SYCL
 typedef Eigen::SyclDevice SyclDevice;
-#endif // TENSORFLOW_USE_SYCL
+#endif  // TENSORFLOW_USE_SYCL
 
 namespace functor {
 
 template <typename Device, typename T>
-Status DoParallelConcatUpdate(const Device& d, const Tensor& value,
-                              int32 loc, Tensor* output) {
+Status DoParallelConcatUpdate(const Device& d, const Tensor& value, int32 loc,
+                              Tensor* output) {
   auto Tvalue = value.shaped<T, 2>({1, value.NumElements()});
   auto Toutput = output->flat_outer_dims<T>();
   auto nrows = Toutput.dimension(0);
@@ -68,13 +68,13 @@ Status DoParallelConcat(const SyclDevice& d, const Tensor& value, int32 loc,
 #define CASE(type)                  \
   case DataTypeToEnum<type>::value: \
     return DoParallelConcatUpdate<SyclDevice, type>(d, value, loc, output);
-    TF_CALL_GPU_NUMBER_TYPES_NO_HALF(CASE);
+    TF_CALL_SYCL_NUMBER_TYPES(CASE);
 #undef CASE
     default:
       return errors::InvalidArgument("Unsupported data type: ", value.dtype());
   }
 }
-#endif // TENSORFLOW_USE_SYCL
+#endif  // TENSORFLOW_USE_SYCL
 
 }  // end namespace functor
 
@@ -179,14 +179,14 @@ TF_CALL_POD_STRING_TYPES(REGISTER_PARALLEL_CONCAT);
                               .Device(DEVICE_SYCL)            \
                               .TypeConstraint<type>("dtype"), \
                           ParallelConcatStart<SyclDevice, type>);
-TF_CALL_GPU_NUMBER_TYPES_NO_HALF(REGISTER_EMPTY)
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_EMPTY)
 #undef REGISTER_EMPTY
 
 #define REGISTER_PARALLEL_CONCAT(type)                                      \
   REGISTER_KERNEL_BUILDER(                                                  \
       Name("ParallelConcat").Device(DEVICE_SYCL).TypeConstraint<type>("T"), \
       FailureKernel);
-TF_CALL_GPU_NUMBER_TYPES_NO_HALF(REGISTER_PARALLEL_CONCAT);
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_PARALLEL_CONCAT);
 #undef REGISTER_PARALLEL_CONCAT
 
 #define REGISTER(type)                                    \
@@ -194,7 +194,7 @@ TF_CALL_GPU_NUMBER_TYPES_NO_HALF(REGISTER_PARALLEL_CONCAT);
                               .Device(DEVICE_SYCL)        \
                               .TypeConstraint<type>("T"), \
                           ParallelConcatUpdate<SyclDevice>);
-TF_CALL_GPU_NUMBER_TYPES_NO_HALF(REGISTER)
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER)
 #undef REGISTER
 
 // Register versions that operate on int32 data on the CPU even though the op
@@ -207,7 +207,7 @@ REGISTER_KERNEL_BUILDER(Name("_ParallelConcatUpdate")
                             .HostMemory("output")
                             .TypeConstraint<int32>("T"),
                         ParallelConcatUpdate<CPUDevice>);
-#endif // TENSORFLOW_USE_SYCL
+#endif  // TENSORFLOW_USE_SYCL
 
 #if GOOGLE_CUDA
 

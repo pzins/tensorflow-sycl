@@ -37,13 +37,17 @@ REGISTER_KERNEL_BUILDER(Name("Abs")
                         UnaryOp<CPUDevice, functor::abs<int32>>);
 #endif
 
-#if TENSORFLOW_USE_SYCL
-REGISTER3(UnaryOp, SYCL, "Abs", functor::abs, float, double, int64);
+#ifdef TENSORFLOW_USE_SYCL
+#define REGISTER_SYCL(type) REGISTER(UnaryOp, SYCL, "Abs", functor::abs, type)
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL);
+TF_CALL_int64(REGISTER_SYCL);
+#undef REGISTER_SYCL
+
 REGISTER_KERNEL_BUILDER(Name("Abs")
                             .Device(DEVICE_SYCL)
                             .HostMemory("x")
                             .HostMemory("y")
                             .TypeConstraint<int32>("T"),
                         UnaryOp<CPUDevice, functor::abs<int32>>);
-#endif // TENSORFLOW_USE_SYCL
+#endif  // TENSORFLOW_USE_SYCL
 }  // namespace tensorflow

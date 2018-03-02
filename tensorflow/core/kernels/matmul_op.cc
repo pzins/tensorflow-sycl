@@ -268,12 +268,12 @@ struct LaunchMatMul<GPUDevice, T, true /* USE_CUBLAS */> {
       std::vector<int64>* algorithms, bool use_autotune, Tensor* out) {
     using perftools::gputools::blas::AlgorithmConfig;
     using perftools::gputools::blas::ComputationType;
-    using perftools::gputools::blas::ProfileResult;
-    using perftools::gputools::blas::Transpose;
     using perftools::gputools::blas::kDefaultAlgorithm;
     using perftools::gputools::blas::kDefaultBlasGemm;
     using perftools::gputools::blas::kDefaultBlasGemv;
     using perftools::gputools::blas::kNoAlgorithm;
+    using perftools::gputools::blas::ProfileResult;
+    using perftools::gputools::blas::Transpose;
     Transpose trans[] = {Transpose::kNoTranspose, Transpose::kTranspose};
     const uint64 m = a.dim_size(1 - dim_pair[0].first);
     const uint64 k = a.dim_size(dim_pair[0].first);
@@ -660,10 +660,11 @@ struct MatMulFunctor<SYCLDevice, T> {
   REGISTER_KERNEL_BUILDER(                                                     \
       Name("MatMul").Device(DEVICE_CPU).TypeConstraint<T>("T").Label("eigen"), \
       MatMulOp<CPUDevice, T, false /* cublas, ignored for CPU */>);
-#define REGISTER_CPU(T)                                                        \
-  REGISTER_KERNEL_BUILDER(                                                     \
-      Name("MatMul").Device(DEVICE_CPU).TypeConstraint<T>("T"),                \
-      MatMulOp<CPUDevice, T, false /* cublas, ignored for CPU */>);            \
+
+#define REGISTER_CPU(T)                                             \
+  REGISTER_KERNEL_BUILDER(                                          \
+      Name("MatMul").Device(DEVICE_CPU).TypeConstraint<T>("T"),     \
+      MatMulOp<CPUDevice, T, false /* cublas, ignored for CPU */>); \
   REGISTER_CPU_EIGEN(T);
 
 #define REGISTER_GPU(T)                                            \
@@ -719,8 +720,7 @@ TF_CALL_half(REGISTER_GPU);
                               .TypeConstraint<T>("T")            \
                               .Label("eigen"),                   \
                           MatMulOp<SYCLDevice, T, false /* xxblas */>)
-TF_CALL_float(REGISTER_SYCL);
-TF_CALL_double(REGISTER_SYCL);
-
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL);
+#undef REGISTER_SYCL
 #endif  // TENSORFLOW_USE_SYCL
 }  // namespace tensorflow

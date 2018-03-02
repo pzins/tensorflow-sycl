@@ -46,7 +46,7 @@ REGISTER_KERNEL_BUILDER(Name("CopyHost")
                             .HostMemory("input")
                             .HostMemory("output"),
                         CopyOp);
-#endif // TENSORFLOW_USE_SYCL
+#endif  // TENSORFLOW_USE_SYCL
 
 // Register debug identity (non-ref and ref) ops.
 REGISTER_KERNEL_BUILDER(Name("DebugIdentity").Device(DEVICE_CPU),
@@ -66,7 +66,7 @@ REGISTER_KERNEL_BUILDER(Name("DebugIdentity")
                             .HostMemory("input")
                             .HostMemory("output"),
                         DebugIdentityOp);
-#endif // TENSORFLOW_USE_SYCL
+#endif  // TENSORFLOW_USE_SYCL
 
 // Register debug NaN-counter (non-ref and ref) ops.
 #define REGISTER_DEBUG_NAN_COUNT(type)                                    \
@@ -96,9 +96,8 @@ REGISTER_GPU_DEBUG_NAN_COUNT(double);
                               .HostMemory("output")       \
                               .TypeConstraint<type>("T"), \
                           DebugNanCountOp<type>);
-REGISTER_GPU_DEBUG_NAN_COUNT(float);
-REGISTER_GPU_DEBUG_NAN_COUNT(double);
-#endif // TENSORFLOW_USE_SYCL
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_GPU_DEBUG_NAN_COUNT);
+#endif  // TENSORFLOW_USE_SYCL
 
 // Register debug numeric summary ops.
 #define REGISTER_DEBUG_NUMERIC_SUMMARY_COUNT(type)        \
@@ -135,7 +134,6 @@ TF_CALL_double(REGISTER_GPU_DEBUG_NUMERIC_SUMMARY_COUNT);
                           DebugNumericSummaryOp<type>);
 TF_CALL_bool(REGISTER_SYCL_DEBUG_NUMERIC_SUMMARY_COUNT);
 TF_CALL_INTEGRAL_TYPES(REGISTER_SYCL_DEBUG_NUMERIC_SUMMARY_COUNT);
-TF_CALL_float(REGISTER_SYCL_DEBUG_NUMERIC_SUMMARY_COUNT);
-TF_CALL_double(REGISTER_SYCL_DEBUG_NUMERIC_SUMMARY_COUNT);
+TF_CALL_SYCL_NUMBER_TYPES(REGISTER_SYCL_DEBUG_NUMERIC_SUMMARY_COUNT);
 #endif  // TENSORFLOW_USE_SYCL
 }  // namespace tensorflow

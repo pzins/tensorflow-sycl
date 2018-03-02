@@ -49,7 +49,7 @@ limitations under the License.
 #include "tensorflow/core/platform/stream_executor.h"
 #endif  // GOOGLE_CUDA
 
-#ifdef TF_USE_SYCLDNN
+#if defined(TF_USE_SYCLDNN) && defined(TENSORFLOW_USE_SYCL)
 #include "tensorflow/core/kernels/conv_ops_sycl.h"
 #endif  // TF_USE_SYCLDNN
 
@@ -114,8 +114,7 @@ struct LaunchConv2DBackpropInputOp<CPUDevice, T> {
     const CPUDevice& d = ctx->eigen_device<CPUDevice>();
     functor::SpatialConvolutionBackwardInput<CPUDevice, T>()(
         d, in_backprop->tensor<T, 4>(), filter.tensor<T, 4>(),
-        out_backprop.tensor<T, 4>(), in_backprop->dim_size(1),
-        in_backprop->dim_size(2), row_stride, col_stride);
+        out_backprop.tensor<T, 4>(), row_stride, col_stride);
   }
 };
 

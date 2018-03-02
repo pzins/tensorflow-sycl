@@ -51,7 +51,8 @@ struct BinaryFunctor<SYCLDevice, Functor, NDIMS, has_errors> {
   void operator()(const SYCLDevice& d, typename Functor::tout_type out,
                   typename Functor::tin_type in0,
                   typename Functor::tin_type in1, bool* error) {
-    To32Bit(out).device(d) = To32Bit(in0).binaryExpr(To32Bit(in1), typename Functor::func());
+    To32Bit(out).device(d) =
+        To32Bit(in0).binaryExpr(To32Bit(in1), typename Functor::func());
   }
 
   void Left(const SYCLDevice& d, typename Functor::tout_type out,
@@ -61,7 +62,9 @@ struct BinaryFunctor<SYCLDevice, Functor, NDIMS, has_errors> {
     constexpr int NumDims = Functor::tin_type::NumDimensions;
     static_assert(NumDims == 1, "Unexpected size");
     Eigen::Sizes<1> scalar_dim;
-    out.device(d) = scalar.reshape(scalar_dim).broadcast(in.dimensions()).binaryExpr(in, Binary());
+    out.device(d) = scalar.reshape(scalar_dim)
+                        .broadcast(in.dimensions())
+                        .binaryExpr(in, Binary());
   }
 
   void Right(const SYCLDevice& d, typename Functor::tout_type out,
@@ -71,7 +74,8 @@ struct BinaryFunctor<SYCLDevice, Functor, NDIMS, has_errors> {
     constexpr int NumDims = Functor::tin_type::NumDimensions;
     static_assert(NumDims == 1, "Unexpected size");
     Eigen::Sizes<1> scalar_dim;
-    out.device(d) = in.binaryExpr(scalar.reshape(scalar_dim).broadcast(in.dimensions()), Binary());
+    out.device(d) = in.binaryExpr(
+        scalar.reshape(scalar_dim).broadcast(in.dimensions()), Binary());
   }
 
   void BCast(const SYCLDevice& d,
@@ -102,57 +106,6 @@ struct BinaryFunctor<SYCLDevice, Functor, NDIMS, has_errors> {
         To32Bit(in1).broadcast(bcast1), func);
   }
 };
-
-// Macros to explicitly instantiate kernels on GPU for multiple types
-// (T0, T1, etc.) for UnaryFunctor (e.g., functor::sqrt).
-#define DEFINE_UNARY1(F, T) template struct UnaryFunctor<SYCLDevice, F<T> >
-#define DEFINE_UNARY2(F, T0, T1) \
-  DEFINE_UNARY1(F, T0);          \
-  DEFINE_UNARY1(F, T1)
-#define DEFINE_UNARY3(F, T0, T1, T2) \
-  DEFINE_UNARY2(F, T0, T1);          \
-  DEFINE_UNARY1(F, T2)
-#define DEFINE_UNARY4(F, T0, T1, T2, T3) \
-  DEFINE_UNARY2(F, T0, T1);              \
-  DEFINE_UNARY2(F, T2, T3)
-#define DEFINE_UNARY5(F, T0, T1, T2, T3, T4) \
-  DEFINE_UNARY2(F, T0, T1);                  \
-  DEFINE_UNARY3(F, T2, T3, T4)
-
-// Macros to explicitly instantiate kernels on GPU for multiple types
-// (T0, T1, etc.) for BinaryFunctor.
-#define DEFINE_BINARY1(F, T)                          \
-  template struct BinaryFunctor<SYCLDevice, F<T>, 1>; \
-  template struct BinaryFunctor<SYCLDevice, F<T>, 2>; \
-  template struct BinaryFunctor<SYCLDevice, F<T>, 3>
-#define DEFINE_BINARY2(F, T0, T1) \
-  DEFINE_BINARY1(F, T0);          \
-  DEFINE_BINARY1(F, T1)
-#define DEFINE_BINARY3(F, T0, T1, T2) \
-  DEFINE_BINARY2(F, T0, T1);          \
-  DEFINE_BINARY1(F, T2)
-#define DEFINE_BINARY4(F, T0, T1, T2, T3) \
-  DEFINE_BINARY2(F, T0, T1);              \
-  DEFINE_BINARY2(F, T2, T3)
-#define DEFINE_BINARY5(F, T0, T1, T2, T3, T4) \
-  DEFINE_BINARY2(F, T0, T1);                  \
-  DEFINE_BINARY3(F, T2, T3, T4)
-#define DEFINE_BINARY6(F, T0, T1, T2, T3, T4, T5) \
-  DEFINE_BINARY3(F, T0, T1, T2);                  \
-  DEFINE_BINARY3(F, T3, T4, T5)
-#define DEFINE_BINARY7(F, T0, T1, T2, T3, T4, T5, T6) \
-  DEFINE_BINARY3(F, T0, T1, T2);                      \
-  DEFINE_BINARY4(F, T3, T4, T5, T6)
-#define DEFINE_BINARY8(F, T0, T1, T2, T3, T4, T5, T6, T7) \
-  DEFINE_BINARY4(F, T0, T1, T2, T3);                      \
-  DEFINE_BINARY4(F, T4, T5, T6, T7)
-#define DEFINE_BINARY9(F, T0, T1, T2, T3, T4, T5, T6, T7, T8) \
-  DEFINE_BINARY4(F, T0, T1, T2, T3);                          \
-  DEFINE_BINARY5(F, T4, T5, T6, T7, T8)
-#define DEFINE_BINARY10(F, T0, T1, T2, T3, T4, T5, T6, T7, T8, T9) \
-  DEFINE_BINARY5(F, T0, T1, T2, T3, T4);                           \
-  DEFINE_BINARY5(F, T5, T6, T7, T8, T9)
-
 }  // end namespace functor
 }  // end namespace tensorflow
 
