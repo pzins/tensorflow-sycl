@@ -360,7 +360,7 @@ struct OutputData {
    * passed with the pointer, rather than specifying the pointer will be to
    * global memory or to local memory.
    */
-  template <bool accumulate_output, typename _T>
+  template <typename _T>
   inline TF_ATTRIBUTE_ALWAYS_INLINE static void write_filter_output(
       _T* output, Index const channel, Index const feature,
       Index const n_channels, Index const n_features,
@@ -369,11 +369,7 @@ struct OutputData {
     for (int r = 0; r < M; ++r) {
       for (int c = 0; c < N; ++c) {
         const int idx = (r * N + c) * n_channels * n_features;
-        if (accumulate_output) {
-          output[idx] += tile.data[r][c];
-        } else {
-          output[idx] = tile.data[r][c];
-        }
+        output[idx] = tile.data[r][c];
 #if 0
         *output = tile.data[r][c];
         output += n_channels * n_features;
@@ -412,7 +408,7 @@ struct ExtractInputTiles {
         output_accessor_{output} {}
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE void operator()(cl::sycl::item<1> item) {
-    Index index = item.get_id(0);
+    Index index = item.get(0);
     if (index < n_elems_) {
       const T* input_data =
           ConvertToActualTypeSycl(T, input_accessor_) + in_offset_;
@@ -478,11 +474,10 @@ struct ExtractInputTiles<T, M, N, R, S, ConvType::FilterBackprop> {
       cl::sycl::accessor<buffer_data, 1, read_mode, global_access>;
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE ExtractInputTiles(
-      Index const in_offset, Index const n_tiles, Index const n_tile_rows,
-      Index const n_tile_cols, SYCLConv2DParams const& params,
-      read_accessor const input, write_accessor output)
-      : in_offset_{in_offset},
-        n_elems_{params.channels_ * n_tile_cols * n_tile_rows * params.batch_},
+      Index const n_tiles, Index const n_tile_rows, Index const n_tile_cols,
+      SYCLConv2DParams const& params, read_accessor const input,
+      write_accessor output)
+      : n_elems_{params.channels_ * n_tile_cols * n_tile_rows * params.batch_},
         n_tiles_{n_tiles},
         n_tile_rows_{n_tile_rows},
         n_tile_cols_{n_tile_cols},
@@ -495,10 +490,9 @@ struct ExtractInputTiles<T, M, N, R, S, ConvType::FilterBackprop> {
         output_accessor_{output} {}
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE void operator()(cl::sycl::item<1> item) {
-    Index index = item.get_id(0);
+    Index index = item.get(0);
     if (index < n_elems_) {
-      const T* input_data =
-          ConvertToActualTypeSycl(T, input_accessor_) + in_offset_;
+      const T* input_data = ConvertToActualTypeSycl(T, input_accessor_);
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
 
       const helpers::TensorIndex2D tile_channel_idx =
@@ -535,7 +529,6 @@ struct ExtractInputTiles<T, M, N, R, S, ConvType::FilterBackprop> {
   }
 
  private:
-  const Index in_offset_;
   const Index n_elems_;
   const Index n_tiles_;
   const Index n_tile_rows_;
@@ -570,7 +563,7 @@ struct ExtractKernelTiles {
         output_accessor_{output} {}
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE void operator()(cl::sycl::item<1> item) {
-    Index index = item.get_id(0);
+    Index index = item.get(0);
     if (index < n_tiles_) {
       const T* kernel_data = ConvertToActualTypeSycl(T, kernel_accessor_);
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
@@ -626,7 +619,7 @@ struct ExtractKernelTiles<T, M, N, R, S, ConvType::InputBackprop> {
         output_accessor_{output} {}
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE void operator()(cl::sycl::item<1> item) {
-    Index index = item.get_id(0);
+    Index index = item.get(0);
     if (index < n_tiles_) {
       const T* kernel_data = ConvertToActualTypeSycl(T, kernel_accessor_);
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
@@ -678,11 +671,10 @@ struct ExtractKernelTiles<T, M, N, R, S, ConvType::FilterBackprop> {
       cl::sycl::accessor<buffer_data, 1, read_mode, global_access>;
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE ExtractKernelTiles(
-      Index const in_offset, Index const n_tiles, Index const n_tile_rows,
-      Index const n_tile_cols, SYCLConv2DParams const& params,
-      read_accessor const kernel, write_accessor output)
-      : in_offset_{in_offset},
-        n_threads_{params.features_ * n_tile_cols * n_tile_rows *
+      Index const n_tiles, Index const n_tile_rows, Index const n_tile_cols,
+      SYCLConv2DParams const& params, read_accessor const kernel,
+      write_accessor output)
+      : n_threads_{params.features_ * n_tile_cols * n_tile_rows *
                    params.batch_},
         n_tiles_{n_tiles},
         n_tile_rows_{n_tile_rows},
@@ -694,10 +686,9 @@ struct ExtractKernelTiles<T, M, N, R, S, ConvType::FilterBackprop> {
         output_accessor_{output} {}
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE void operator()(cl::sycl::item<1> item) {
-    Index index = item.get_id(0);
+    Index index = item.get(0);
     if (index < n_threads_) {
-      const T* kernel_data =
-          ConvertToActualTypeSycl(T, kernel_accessor_) + in_offset_;
+      const T* kernel_data = ConvertToActualTypeSycl(T, kernel_accessor_);
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
 
       const helpers::TensorIndex2D tile_feature_idx =
@@ -734,7 +725,6 @@ struct ExtractKernelTiles<T, M, N, R, S, ConvType::FilterBackprop> {
   }
 
  private:
-  const Index in_offset_;
   const Index n_threads_;
   const Index n_tiles_;
   const Index n_tile_rows_;
@@ -745,8 +735,7 @@ struct ExtractKernelTiles<T, M, N, R, S, ConvType::FilterBackprop> {
   const read_accessor kernel_accessor_;
   write_accessor output_accessor_;
 };
-template <typename T, int M, int N, int R, int S, ConvType CType,
-          bool accumulate_output = false>
+template <typename T, int M, int N, int R, int S, ConvType CType>
 struct ExtractOutputTiles {
   using Index = int;
   using buffer_data = uint8_t;
@@ -775,7 +764,7 @@ struct ExtractOutputTiles {
         output_accessor_{output} {}
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE void operator()(cl::sycl::item<1> item) {
-    Index index = item.get_id(0);
+    Index index = item.get(0);
     if (index < n_threads_) {
       const T* input_data = ConvertToActualTypeSycl(T, input_accessor_);
       T* output_data =
@@ -826,9 +815,8 @@ struct ExtractOutputTiles {
   const read_accessor input_accessor_;
   write_accessor output_accessor_;
 };
-template <typename T, int M, int N, int R, int S, bool accumulate_output>
-struct ExtractOutputTiles<T, M, N, R, S, ConvType::FilterBackprop,
-                          accumulate_output> {
+template <typename T, int M, int N, int R, int S>
+struct ExtractOutputTiles<T, M, N, R, S, ConvType::FilterBackprop> {
   using Index = int;
   using buffer_data = uint8_t;
   static constexpr auto read_mode = cl::sycl::access::mode::read;
@@ -849,7 +837,7 @@ struct ExtractOutputTiles<T, M, N, R, S, ConvType::FilterBackprop,
         output_accessor_{output} {}
 
   inline TF_ATTRIBUTE_ALWAYS_INLINE void operator()(cl::sycl::item<1> item) {
-    Index index = item.get_id(0);
+    Index index = item.get(0);
     if (index < n_threads_) {
       const T* input_data = ConvertToActualTypeSycl(T, input_accessor_);
       T* output_data = ConvertToActualTypeSycl(T, output_accessor_);
@@ -861,9 +849,9 @@ struct ExtractOutputTiles<T, M, N, R, S, ConvType::FilterBackprop,
 
       IntermediateTile<T, M, N, R, S> tmp{input_data, channel, n_channels_,
                                           feature, n_features_};
-      OutputData<T, M, N, R, S>::template write_filter_output<
-          accumulate_output>(output_data, channel, feature, n_channels_,
-                             n_features_, OutputTile<T, M, N, R, S>{tmp});
+      OutputData<T, M, N, R, S>::write_filter_output(
+          output_data, channel, feature, n_channels_, n_features_,
+          OutputTile<T, M, N, R, S>{tmp});
     }
   }
 
