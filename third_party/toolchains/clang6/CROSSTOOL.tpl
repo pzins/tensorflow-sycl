@@ -103,7 +103,7 @@ toolchain {
   compiler_flag: "-Wno-unused-function"
   compiler_flag: "-fdiagnostics-show-option"
   compiler_flag: "-fmessage-length=0"
-  compiler_flag: "-fno-exceptions"
+  #compiler_flag: "-fno-exceptions"
   compiler_flag: "-fno-omit-frame-pointer"
   compiler_flag: "-fno-strict-aliasing"
   compiler_flag: "-fno-use-init-array"
