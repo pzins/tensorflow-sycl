@@ -13,6 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
+#include "tensorflow/core/distributed_runtime/rpc/grpcTracer.h"
+
 #include "tensorflow/core/distributed_runtime/rpc/grpc_tensor_coding.h"
 #include "grpc++/support/byte_buffer.h"
 #include "grpc++/support/slice.h"
@@ -31,6 +33,8 @@ namespace grpc {
 
 void EncodeRecvTensorResponseToByteBuffer(const RecvTensorResponse& proto,
                                           ::grpc::ByteBuffer* result) {
+  size_t len = proto.ByteSize();
+  tracepoint(grpcTracer, EncodeRecvTensorResponseToByteBuffer, "grpc_coding", "EncodeRecvTensorResponseToByteBuffer", (uint64_t) len);
   ::grpc::Slice slice(proto.ByteSizeLong());
   proto.SerializeWithCachedSizesToArray(
       const_cast<uint8*>(reinterpret_cast<const uint8*>(slice.begin())));
@@ -228,6 +232,7 @@ void EncodeTensorToByteBuffer(bool is_dead, const Tensor& val,
       total_bytes += slices[i].size();
     }
     CHECK_EQ(total_bytes, expected_size);
+    tracepoint(grpcTracer, EncodeTensorToByteBuffer, "grpc_coding", "EncodeTensorToByteBuffer", (uint64_t) total_bytes);
 
     ::grpc::ByteBuffer tmp(&slices[0], num_slices);
     result->Swap(&tmp);

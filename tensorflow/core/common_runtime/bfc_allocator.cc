@@ -12,7 +12,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
-
+#include "tensorflow/core/tensorflowTracer.h"
 #include <atomic>
 
 #include "tensorflow/core/common_runtime/bfc_allocator.h"
@@ -283,6 +283,7 @@ void* BFCAllocator::AllocateRawInternal(size_t unused_alignment,
 
 void* BFCAllocator::FindChunkPtr(BinNum bin_num, size_t rounded_bytes,
                                  size_t num_bytes) {
+  Profile();
   // First identify the first bin that could satisfy rounded_bytes.
   for (; bin_num < kNumBins; bin_num++) {
     // Start searching from the first bin for the smallest chunk that fits
@@ -324,6 +325,11 @@ void* BFCAllocator::FindChunkPtr(BinNum bin_num, size_t rounded_bytes,
         stats_.max_alloc_size =
             std::max<std::size_t>(stats_.max_alloc_size, chunk->size);
 
+            tracepoint(tensorflowTracer, bfc_allocator_stats, Name().c_str(),
+                    stats_.num_allocs,
+                    stats_.bytes_in_use,
+                    stats_.max_bytes_in_use,
+                    stats_.max_alloc_size);
         VLOG(4) << "Returning: " << chunk->ptr;
         if (VLOG_IS_ON(4)) {
           LOG(INFO) << "A: " << RenderOccupancy();
@@ -470,6 +476,11 @@ void BFCAllocator::FreeAndMaybeCoalesce(BFCAllocator::ChunkHandle h) {
 
   // Updates the stats.
   stats_.bytes_in_use -= c->size;
+  tracepoint(tensorflowTracer, bfc_allocator_stats, Name().c_str(),
+        stats_.num_allocs,
+        stats_.bytes_in_use,
+        stats_.max_bytes_in_use,
+        stats_.max_alloc_size);
 
   // This chunk is no longer in-use, consider coalescing the chunk
   // with adjacent chunks.
@@ -618,6 +629,66 @@ string BFCAllocator::RenderOccupancy() {
 
   return StringPiece(rendered, resolution).ToString();
 }
+
+
+void BFCAllocator::Profile() {
+
+    uint64 total_bytes_in_use = 0, total_requested_bytes_in_use = 0;
+    uint64 total_bytes = 0, total_requested_bytes = 0;
+    uint64 chunks = 0, in_use_chunks = 0, free_chunks = 0;
+
+    // iterate over chunks and compute some statistics
+    // compute statistics over all chunks
+    // compute statistics related to the bins
+    std::array<BinDebugInfo, kNumBins> bin_infos;
+    for (const auto& region : region_manager_.regions()) {
+      ChunkHandle h = region_manager_.get_handle(region.ptr());
+      while (h != kInvalidChunkHandle) {
+        // Chunks
+        const Chunk* c = ChunkFromHandle(h);
+        chunks++;
+        if (c->in_use()) {
+            in_use_chunks++;
+            total_bytes_in_use += c->size;
+            total_requested_bytes_in_use += c->requested_size;
+        } else {
+          free_chunks++;
+          total_bytes += c->size;
+          total_requested_bytes += c->requested_size;
+        }
+
+        // Bins
+        BinNum bin_num = BinNumForSize(c->size);
+        BinDebugInfo& bin_info = bin_infos[bin_num];
+        bin_info.total_bytes_in_bin += c->size;
+        bin_info.total_chunks_in_bin++;
+        if (c->in_use()) {
+            bin_info.total_bytes_in_use += c->size;
+            bin_info.total_requested_bytes_in_use += c->requested_size;
+            bin_info.total_chunks_in_use++;
+        }
+        h = c->next;
+      }
+    }
+    tracepoint(tensorflowTracer, bfc_chunks_stats, Name().c_str(),
+        total_bytes_in_use, total_requested_bytes_in_use, total_bytes_in_use - total_requested_bytes_in_use,
+        total_bytes, total_requested_bytes, total_bytes - total_requested_bytes,
+        chunks, in_use_chunks, free_chunks);
+
+    // Iterate over the bins to output the statistics
+    for (BinNum bin_num = 0; bin_num < kNumBins; bin_num++) {
+       Bin* b = BinFromIndex(bin_num);
+       const BinDebugInfo& bin_info = bin_infos[bin_num];
+       CHECK_EQ(b->free_chunks.size(),
+                bin_info.total_chunks_in_bin - bin_info.total_chunks_in_use);
+
+        tracepoint(tensorflowTracer, bfc_bins_stats, Name().c_str(), bin_num,
+            bin_info.total_chunks_in_bin, bin_info.total_chunks_in_use,
+            bin_info.total_bytes_in_bin, bin_info.total_bytes_in_use,
+            bin_info.total_requested_bytes_in_use);
+     }
+}
+
 
 void BFCAllocator::DumpMemoryLog(size_t num_bytes) {
   const std::array<BinDebugInfo, kNumBins> bin_infos = get_bin_debug_info();

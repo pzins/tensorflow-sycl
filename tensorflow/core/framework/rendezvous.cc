@@ -12,6 +12,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
+#include "tensorflow/core/tensorflowTracer.h"
 
 #include "tensorflow/core/framework/rendezvous.h"
 
@@ -154,6 +155,7 @@ class LocalRendezvousImpl : public Rendezvous {
               const bool is_dead) override {
     uint64 key_hash = KeyHash(key.FullKey());
     VLOG(2) << "Send " << this << " " << key_hash << " " << key.FullKey();
+    tracepoint(tensorflowTracer, rdv_send, "rendezvous", key.FullKey().data());
 
     mu_.lock();
     if (!status_.ok()) {
@@ -188,6 +190,8 @@ class LocalRendezvousImpl : public Rendezvous {
     // Notify the waiter by invoking its done closure, outside the
     // lock.
     DCHECK(!item->IsSendValue());
+    tracepoint(tensorflowTracer, rdv_recv, "rendezvous", key.FullKey().data());
+
     item->waiter(Status::OK(), send_args, item->recv_args, val, is_dead);
     delete item;
     return Status::OK();
@@ -224,6 +228,7 @@ class LocalRendezvousImpl : public Rendezvous {
 
     // A message has already arrived and is queued in the table under
     // this key.  Consumes the message and invokes the done closure.
+    tracepoint(tensorflowTracer, rdv_recv, "rendezvous", key.FullKey().data());
     Item* item = queue->front();
     queue->pop_front();
     mu_.unlock();

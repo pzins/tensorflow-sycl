@@ -1785,6 +1785,7 @@ FRAMEWORK_INTERNAL_PUBLIC_HEADERS = [
     "util/presized_cuckoo_map.h",
     "util/tensor_slice_set.h",
     "util/tensor_slice_util.h",
+    "tensorflowTracer.h"
 ] + tf_additional_framework_hdrs()
 
 tf_cuda_library(
@@ -1867,6 +1868,7 @@ tf_cuda_library(
         "//conditions:default": ["-ldl"],
     }) + [
         "-lm",
+        "-ldl", "-llttng-ust"
     ],
     deps = [
         ":lib",
@@ -2080,6 +2082,8 @@ CORE_CPU_LIB_HEADERS = CORE_CPU_BASE_HDRS + [
     "common_runtime/visitable_allocator.h",
     "graph/gradients.h",
     "graph/quantize_training.h",
+    "tensorflowTracer.h"
+
 ] + if_mkl(["graph/mkl_graph_util.h"])
 
 tf_cuda_library(
@@ -2126,6 +2130,7 @@ tf_cuda_library(
         "public/session.h",
         "public/session_options.h",
         "public/version.h",
+        "tensorflowTracer.o",
     ],
     hdrs = CORE_CPU_LIB_HEADERS,
     copts = tf_copts(),
@@ -2149,6 +2154,7 @@ tf_cuda_library(
         ],
     ),
     alwayslink = 1,
+    linkopts = ["-llttng-ust", "-ldl"],
 )
 
 tf_cuda_library(

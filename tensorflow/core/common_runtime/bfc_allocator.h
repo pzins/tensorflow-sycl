@@ -342,6 +342,8 @@ class BFCAllocator : public VisitableAllocator {
   string RenderOccupancy() EXCLUSIVE_LOCKS_REQUIRED(lock_);
   void DumpMemoryLog(size_t num_bytes) EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
+  void Profile() EXCLUSIVE_LOCKS_REQUIRED(lock_);
+
   ChunkHandle AllocateChunk() EXCLUSIVE_LOCKS_REQUIRED(lock_);
   void DeallocateChunk(ChunkHandle h) EXCLUSIVE_LOCKS_REQUIRED(lock_);
 

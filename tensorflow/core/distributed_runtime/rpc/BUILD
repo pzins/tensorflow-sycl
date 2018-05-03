@@ -88,8 +88,8 @@ cc_library(
 
 cc_library(
     name = "grpc_remote_worker",
-    srcs = ["grpc_remote_worker.cc"],
-    hdrs = ["grpc_remote_worker.h"],
+    srcs = ["grpc_remote_worker.cc", "grpcTracer.o"],
+    hdrs = ["grpc_remote_worker.h", "grpcTracer.h"],
     deps = [
         ":grpc_client_cq_tag",
         ":grpc_state",
@@ -104,6 +104,8 @@ cc_library(
         "//tensorflow/core/distributed_runtime:worker_interface",
         "@grpc//:grpc++_unsecure",
     ],
+    linkopts = ["-ldl", "-llttng-ust"],
+
 )
 
 cc_library(
@@ -122,7 +124,7 @@ cc_library(
 cc_library(
     name = "grpc_tensor_coding",
     srcs = ["grpc_tensor_coding.cc"],
-    hdrs = ["grpc_tensor_coding.h"],
+    hdrs = ["grpc_tensor_coding.h", "grpcTracer.h"],
     deps = [
         "//tensorflow/core:core_cpu_internal",
         "//tensorflow/core:framework",
@@ -132,6 +134,7 @@ cc_library(
         "//tensorflow/core:worker_proto_cc",
         "@grpc//:grpc++_unsecure",
     ],
+    linkopts = ["-ldl", "-llttng-ust"]
 )
 
 cc_library(
@@ -172,7 +175,8 @@ cc_library(
 tf_cuda_library(
     name = "grpc_worker_service",
     srcs = ["grpc_worker_service.cc"],
-    hdrs = ["grpc_worker_service.h"],
+    hdrs = ["grpc_worker_service.h", "grpcTracer.h"],
+    linkopts = ["-ldl", "-llttng-ust"],
     deps = [
         ":async_service_interface",
         ":grpc_call",

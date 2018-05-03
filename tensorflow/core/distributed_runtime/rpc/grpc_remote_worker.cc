@@ -13,6 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
+#include "grpcTracer.h"
+
 #include "tensorflow/core/distributed_runtime/rpc/grpc_remote_worker.h"
 
 #include <utility>
@@ -63,40 +65,47 @@ class GrpcRemoteWorker : public WorkerInterface {
   void GetStatusAsync(const GetStatusRequest* request,
                       GetStatusResponse* response,
                       StatusCallback done) override {
+    tracepoint(grpcTracer, send_request, "GetStatus");
     IssueRequest(request, response, getstatus_, std::move(done));
   }
 
   void CreateWorkerSessionAsync(const CreateWorkerSessionRequest* request,
                                 CreateWorkerSessionResponse* response,
                                 StatusCallback done) override {
+    tracepoint(grpcTracer, send_request, "CreateWorkerSession");
     IssueRequest(request, response, createworkersession_, std::move(done));
   }
 
   void DeleteWorkerSessionAsync(const DeleteWorkerSessionRequest* request,
                                 DeleteWorkerSessionResponse* response,
                                 StatusCallback done) override {
+    tracepoint(grpcTracer, send_request, "DeleteWorkerSession");
     IssueRequest(request, response, deleteworkersession_, std::move(done));
   }
 
   void RegisterGraphAsync(const RegisterGraphRequest* request,
                           RegisterGraphResponse* response,
                           StatusCallback done) override {
+    tracepoint(grpcTracer, send_request, "RegisterGraph");
     IssueRequest(request, response, registergraph_, std::move(done));
   }
 
   void DeregisterGraphAsync(const DeregisterGraphRequest* request,
                             DeregisterGraphResponse* response,
                             StatusCallback done) override {
+    tracepoint(grpcTracer, send_request, "DeregisterGraph");
     IssueRequest(request, response, deregistergraph_, std::move(done));
   }
 
   void RunGraphAsync(CallOptions* call_opts, const RunGraphRequest* request,
                      RunGraphResponse* response, StatusCallback done) override {
+     tracepoint(grpcTracer, send_request, "RunGraph");
     IssueRequest(request, response, rungraph_, std::move(done), call_opts);
   }
   void RunGraphAsync(CallOptions* call_opts, RunGraphRequestWrapper* request,
                      MutableRunGraphResponseWrapper* response,
                      StatusCallback done) override {
+    tracepoint(grpcTracer, send_request, "RunGraph");
     IssueRequest(&request->ToProto(), get_proto_from_wrapper(response),
                  rungraph_, std::move(done), call_opts);
   }
@@ -104,27 +113,42 @@ class GrpcRemoteWorker : public WorkerInterface {
   void CleanupGraphAsync(const CleanupGraphRequest* request,
                          CleanupGraphResponse* response,
                          StatusCallback done) override {
+    tracepoint(grpcTracer, send_request, "CleanupGraph");
     IssueRequest(request, response, cleanupgraph_, std::move(done));
   }
 
   void CleanupAllAsync(const CleanupAllRequest* request,
                        CleanupAllResponse* response,
                        StatusCallback done) override {
+    tracepoint(grpcTracer, send_request, "CleanupAll");
     IssueRequest(request, response, cleanupall_, std::move(done));
   }
 
   void RecvTensorAsync(CallOptions* call_opts, const RecvTensorRequest* request,
                        TensorResponse* response, StatusCallback done) override {
-    VLOG(1) << "RecvTensorAsync req: " << request->DebugString();
-    int64 start_usec = Env::Default()->NowMicros();
-    // Type-specialized logging for this method.
-    bool logging_active = logger_->LoggingActive() || VLOG_IS_ON(2);
-    StatusCallback wrapper_done;
-    const StatusCallback* cb_to_use;
-    if (!logging_active) {
-      cb_to_use = &done;  // No additional work to do, so just use done directly
-    } else {
-      wrapper_done = [this, request, response, done, start_usec](Status s) {
+      VLOG(1) << "RecvTensorAsync req: " << request->DebugString();
+      const string& key = request->rendezvous_key();
+      std::vector<string> key_parts = str_util::Split(key, ';');
+      tracepoint(grpcTracer, send_request_tensor_start, "grpc_send_request_tensor", "send_request_tensor", key.c_str());
+      int64 start_usec = Env::Default()->NowMicros();
+      // Type-specialized logging for this method.
+      bool logging_active = logger_->LoggingActive() || VLOG_IS_ON(2);
+      StatusCallback wrapper_done;
+      const StatusCallback* cb_to_use;
+      if (!logging_active) {
+          wrapper_done = [done, request](Status s) {
+          const string& key = request->rendezvous_key();
+          std::vector<string> key_parts = str_util::Split(key, ';');
+          tracepoint(grpcTracer, send_request_tensor_end, "grpc_send_request_tensor", "send_request_tensor", key.c_str());
+          done(s);
+        };
+        cb_to_use = &wrapper_done;
+      } else {
+        wrapper_done = [this, request, response, done,
+                     start_usec](Status s) {
+        const string& key = request->rendezvous_key();
+        std::vector<string> key_parts = str_util::Split(key, ';');
+        tracepoint(grpcTracer, send_request_tensor_end, "grpc_send_request_tensor", "send_request_tensor", key.c_str());
         if (logger_->LoggingActive()) {
           int64 end_usec = Env::Default()->NowMicros();
           int64 step_id = request->step_id();
@@ -144,9 +168,8 @@ class GrpcRemoteWorker : public WorkerInterface {
             // the RecvTensor response can not have been sent before
             // the RecvTensor request, and must have been sent before
             // it was received.
-            send_start_usec = std::max(
-                start_usec,
-                static_cast<int64>(response->metadata().send_start_micros()));
+            send_start_usec = std::max(start_usec, static_cast<int64>(
+                response->metadata().send_start_micros()));
             send_start_usec = std::min(send_start_usec, end_usec - 1);
           }
           const string& key = request->rendezvous_key();
@@ -155,29 +178,33 @@ class GrpcRemoteWorker : public WorkerInterface {
             LOG(WARNING) << "Bad key: " << key;
           } else {
             logger_->RecordRecvTensor(step_id, send_start_usec, end_usec,
-                                      key_parts[3],  // tensor name
-                                      key_parts[0],  // src_device
-                                      key_parts[2],  // dst_device
-                                      bytes);
+                                    key_parts[3],  // tensor name
+                                    key_parts[0],  // src_device
+                                    key_parts[2],  // dst_device
+                                    bytes);
           }
         }
         VLOG(2) << "done callback, req: " << request->DebugString()
-                << " response " << response->metadata().DebugString();
+              << " response " << response->metadata().DebugString();
         done(s);
       };
       cb_to_use = &wrapper_done;
     }
-
+    tracepoint(grpcTracer, send_RecvTensor_request, "grpc", "RecvTensor", key.c_str(),
+              key_parts[3].c_str(), key_parts[0].c_str(), key_parts[2].c_str(), request->DebugString().c_str(),
+              response->metadata().DebugString().c_str());
     IssueRequest(request, response, recvtensor_, *cb_to_use, call_opts);
   }
 
   void LoggingAsync(const LoggingRequest* request, LoggingResponse* response,
                     StatusCallback done) override {
+    tracepoint(grpcTracer, send_request, "Logging");
     IssueRequest(request, response, logging_, done);
   }
 
   void TracingAsync(const TracingRequest* request, TracingResponse* response,
                     StatusCallback done) override {
+    tracepoint(grpcTracer, send_request, "Tracing");
     IssueRequest(request, response, tracing_, done);
   }
 
